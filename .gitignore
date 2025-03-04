@@ -1,1 +1,4 @@
 .pio/
+
+# Local IDE stuff
+.vscode/
