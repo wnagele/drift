@@ -3,6 +3,10 @@ description: "Drone Remote Identification and Flight Tracking"
 url: "https://drift.wnagele.com"
 baseurl: "/"
 nav_external_links:
+  - title: Releases
+    url: https://github.com/wnagele/drift/releases
+    hide_icon: true
+    opens_in_new_tab: true
   - title: Source
     url: https://github.com/wnagele/drift
     hide_icon: true
