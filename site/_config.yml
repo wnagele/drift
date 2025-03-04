@@ -1,0 +1,15 @@
+title: "DRIFT"
+description: "Drone Remote Identification and Flight Tracking"
+url: "https://drift.wnagele.com"
+baseurl: "/"
+nav_external_links:
+  - title: Source
+    url: https://github.com/wnagele/drift
+    hide_icon: true
+    opens_in_new_tab: true
+theme: just-the-docs
+color_scheme: dark
+callouts:
+  important:
+    title: Important
+    color: purple
