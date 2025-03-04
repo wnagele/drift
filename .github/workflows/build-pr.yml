@@ -1,0 +1,34 @@
+name: Build PR
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'site/**'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Build
+        run: pio run -e esp32_c3_devkit
+      - name: Package
+        run: |
+          mkdir .pio/package
+          mv .pio/build/esp32_c3_devkit/firmware.bin .pio/package/firmware-esp32_c3_devkit-${{ github.sha }}.bin
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: .pio/package/*.bin
