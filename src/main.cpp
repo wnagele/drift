@@ -1,5 +1,5 @@
 const char *SSID = "DRIFT";
-const char *PASSWORD = "12345";
+const char *PASSWORD = "1234567890";
 
 #include <HardwareSerial.h>
 #include <WiFi.h>
