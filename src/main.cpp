@@ -1,5 +1,6 @@
 #include <HardwareSerial.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include <ESPAsyncWebServer.h>
 #include <ESPAsyncHTTPUpdateServer.h>
 #include "betaflight_mavlink.h"
@@ -28,6 +29,9 @@ void setup() {
     } else {
         WiFi.softAP(wifi_ssid);
     }
+
+    MDNS.begin("drift");
+    MDNS.addService("http", "tcp", 80);
 
     updateServer.setup(&server);
 
