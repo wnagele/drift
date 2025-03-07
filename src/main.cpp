@@ -4,10 +4,7 @@
 #include <ESPAsyncHTTPUpdateServer.h>
 #include "betaflight_mavlink.h"
 #include "dri.h"
-#include "utils.h"
-
-const char *SSID = getDefaultSSID();
-const char *PASSWORD = "1234567890";
+#include "config.h"
 
 ESPAsyncHTTPUpdateServer updateServer;
 AsyncWebServer server(80);
@@ -20,7 +17,17 @@ bool gps_fix = false;
 
 void setup() {
     Serial.begin(9600);
-    WiFi.softAP(SSID, PASSWORD);
+
+    config_init();
+
+    String wifi_ssid = config_wifi_ssid();
+    String wifi_password = config_wifi_password();
+    if (wifi_password != "") {
+        WiFi.softAP(wifi_ssid, wifi_password);
+    } else {
+        WiFi.softAP(wifi_ssid);
+    }
+
     updateServer.setup(&server);
     server.begin();
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
