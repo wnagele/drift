@@ -1,12 +1,13 @@
-const char *SSID = "DRIFT";
-const char *PASSWORD = "1234567890";
-
 #include <HardwareSerial.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include <ESPAsyncHTTPUpdateServer.h>
 #include "betaflight_mavlink.h"
 #include "dri.h"
+#include "utils.h"
+
+const char *SSID = getDefaultSSID();
+const char *PASSWORD = "1234567890";
 
 ESPAsyncHTTPUpdateServer updateServer;
 AsyncWebServer server(80);
