@@ -30,13 +30,17 @@ void setup() {
     }
 
     updateServer.setup(&server);
+
     server.begin();
+    server.onNotFound([](AsyncWebServerRequest * request) { request->send(404); });
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         AsyncWebServerResponse *response = request->beginResponse(200, "text/html", DASH, sizeof(DASH));
         response->addHeader("Content-Encoding", "gzip");
         request->send(response);
     });
+
     mavlink_init(&mavlink_state);
+
     dri_init(&odid_state);
 }
 
