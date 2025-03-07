@@ -1,6 +1,8 @@
+#include <Arduino.h>
 #include <esp32-hal.h>
 #include <BLEDevice.h>
 #include "dri.h"
+#include "config.h"
 
 #define DRI_INTERVAL 20         // ms
 #define DRI_GUARD_MULTIPLIER 2  // ensure there is sufficient time to broadcast
@@ -31,19 +33,33 @@ void ble_transmit(ODID_Message_encoded encoded) {
 void dri_init(ODID_UAS_Data *data) {
     odid_initUasData(data);
 
+    String ua_id = dri_ua_id();
+    if (ua_id != "" && ua_id.length() <= ODID_ID_SIZE) {
+        data->BasicID[0].IDType = ODID_IDTYPE_SERIAL_NUMBER;
+        strncpy(data->BasicID[0].UASID, ua_id.c_str(), ODID_ID_SIZE);
+    }
+
+    String op_id = dri_op_id();
+    if (op_id != "" && op_id.length() <= ODID_ID_SIZE) {
+        data->OperatorID.OperatorIdType = ODID_OPERATOR_ID;
+        strncpy(data->OperatorID.OperatorId, op_id.c_str(), ODID_ID_SIZE);
+    }
+
+    String ua_desc = dri_ua_desc();
+    if (ua_desc != "" && ua_desc.length() <= ODID_STR_SIZE) {
+        data->SelfID.DescType = ODID_DESC_TYPE_TEXT;
+        strncpy(data->SelfID.Desc, ua_desc.c_str(), ODID_STR_SIZE);
+    }
+
+    /*
     data->BasicID[0].UAType = ODID_UATYPE_HELICOPTER_OR_MULTIROTOR;
-    data->BasicID[0].IDType = ODID_IDTYPE_SERIAL_NUMBER;
-    strncpy(data->BasicID[0].UASID, "12345", ODID_ID_SIZE);
+    */
 
-    data->SelfID.DescType = ODID_DESC_TYPE_TEXT;
-    strncpy(data->SelfID.Desc, "test", ODID_STR_SIZE);
-
-    data->OperatorID.OperatorIdType = ODID_OPERATOR_ID;
-    strncpy(data->OperatorID.OperatorId, "424242", ODID_ID_SIZE);
-
+    /*
     data->System.ClassificationType = ODID_CLASSIFICATION_TYPE_EU;
     data->System.CategoryEU = ODID_CATEGORY_EU_OPEN;
     data->System.ClassEU = ODID_CLASS_EU_CLASS_0;
+    */
 
     /*
     data->System.AreaCount = 1;
@@ -52,7 +68,7 @@ void dri_init(ODID_UAS_Data *data) {
     data->System.AreaCeiling = 50;
     */
 
-    BLEDevice::init("test");
+    BLEDevice::init(config_wifi_ssid().c_str());
     BLEAdvertising *adv = BLEDevice::getAdvertising();
     adv->setMinInterval(DRI_INTERVAL / 0.625);
     adv->setMaxInterval(DRI_INTERVAL / 0.625);
