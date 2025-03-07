@@ -4,6 +4,7 @@
 #include <ESPAsyncHTTPUpdateServer.h>
 #include "betaflight_mavlink.h"
 #include "dri.h"
+#include "dash.h"
 #include "config.h"
 
 ESPAsyncHTTPUpdateServer updateServer;
@@ -29,11 +30,17 @@ void setup() {
     }
 
     updateServer.setup(&server);
+
     server.begin();
+    server.onNotFound([](AsyncWebServerRequest * request) { request->send(404); });
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/plain", "Hello DRIFT!");
+        AsyncWebServerResponse *response = request->beginResponse(200, "text/html", DASH, sizeof(DASH));
+        response->addHeader("Content-Encoding", "gzip");
+        request->send(response);
     });
+
     mavlink_init(&mavlink_state);
+
     dri_init(&odid_state);
 }
 
