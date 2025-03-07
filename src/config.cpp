@@ -34,14 +34,14 @@ String config_wifi_password() {
     return prefs.getString(PREFS_WIFI_PASSWORD);
 }
 
-String dri_ua_id() {
+String config_dri_ua_id() {
     return prefs.getString(PREFS_DRI_UA_ID);
 }
 
-String dri_ua_desc() {
+String config_dri_ua_desc() {
     return prefs.getString(PREFS_DRI_UA_DESC);
 }
 
-String dri_op_id() {
+String config_dri_op_id() {
     return prefs.getString(PREFS_DRI_OP_ID);
 }

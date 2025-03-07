@@ -33,19 +33,19 @@ void ble_transmit(ODID_Message_encoded encoded) {
 void dri_init(ODID_UAS_Data *data) {
     odid_initUasData(data);
 
-    String ua_id = dri_ua_id();
+    String ua_id = config_dri_ua_id();
     if (ua_id != "" && ua_id.length() <= ODID_ID_SIZE) {
         data->BasicID[0].IDType = ODID_IDTYPE_SERIAL_NUMBER;
         strncpy(data->BasicID[0].UASID, ua_id.c_str(), ODID_ID_SIZE);
     }
 
-    String op_id = dri_op_id();
+    String op_id = config_dri_op_id();
     if (op_id != "" && op_id.length() <= ODID_ID_SIZE) {
         data->OperatorID.OperatorIdType = ODID_OPERATOR_ID;
         strncpy(data->OperatorID.OperatorId, op_id.c_str(), ODID_ID_SIZE);
     }
 
-    String ua_desc = dri_ua_desc();
+    String ua_desc = config_dri_ua_desc();
     if (ua_desc != "" && ua_desc.length() <= ODID_STR_SIZE) {
         data->SelfID.DescType = ODID_DESC_TYPE_TEXT;
         strncpy(data->SelfID.Desc, ua_desc.c_str(), ODID_STR_SIZE);
