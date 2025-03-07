@@ -1,4 +1,4 @@
-#define DEFAULT_SSID_PREFIX "DRIFT_%02X%02X"
+#define DEFAULT_SSID_FORMAT "DRIFT_%02X%02X"
 #define DEFAULT_SSID_LENGTH 11 // DRIFT_B33F\0
 
-const char *getDefaultSSID();
+String getDefaultSSID();
