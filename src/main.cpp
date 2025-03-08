@@ -42,6 +42,18 @@ void setup() {
         response->addHeader("Content-Encoding", "gzip");
         request->send(response);
     });
+    server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", config_get());
+        request->send(response);
+    });
+    server.on("/api/config", HTTP_POST, [](AsyncWebServerRequest *request){
+        request->send(400);
+    }, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        config_save((char *)data);
+        request->send(200);
+        delay(100);
+        ESP.restart();
+    });
 
     mavlink_init(&mavlink_state);
 

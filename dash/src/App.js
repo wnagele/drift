@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Layout, Menu } from 'antd';
 import { InfoCircleOutlined, EditOutlined } from '@ant-design/icons';
+import Status from './Status';
+import Config from './Config';
 
 const { Content, Sider } = Layout;
 
@@ -18,13 +20,29 @@ const items = [
 ]
 
 const App = () => {
+  const [selectedKey, setSelectedKey] = useState("status");
+
+  const renderContent = () => {
+    switch (selectedKey) {
+      case "status":
+        return <Status />;
+      case "config":
+        return <Config />;
+      default:
+        return null;
+    }
+  };
+
   return (
     <Layout>
       <Sider>
-        <Menu theme="dark" items={items} defaultSelectedKeys={ [ "status" ] }/>
+        <Menu theme="dark"
+              items={items}
+              defaultSelectedKeys={ [ "status" ] }
+              onClick={(e) => setSelectedKey(e.key)} />
       </Sider>
       <Content>
-        TBD
+        {renderContent()}
       </Content>
     </Layout>
   );

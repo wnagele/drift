@@ -1,4 +1,5 @@
 #include <Preferences.h>
+#include <ArduinoJson.h>
 #include "utils.h"
 
 #include "config.h"
@@ -26,6 +27,37 @@ void config_init() {
         prefs.putString(PREFS_DRI_OP_ID, "");
 }
 
+String config_get() {
+    JsonDocument doc;
+    doc["wifi"]["ssid"] = config_wifi_ssid();
+    doc["wifi"]["password"] = config_wifi_password();
+    doc["dri"]["ua_id"] = config_dri_ua_id();
+    doc["dri"]["ua_desc"] = config_dri_ua_desc();
+    doc["dri"]["op_id"] = config_dri_op_id();
+    String buf;
+    serializeJson(doc, buf);
+    return buf;
+}
+
+void config_save(String data) {
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, data);
+    if (err) {
+        Serial.println("JSON Error");
+        return;
+    }
+    String wifi_ssid = doc["wifi"]["ssid"];
+    prefs.putString(PREFS_WIFI_SSID, wifi_ssid);
+    String wifi_password = doc["wifi"]["password"];
+    prefs.putString(PREFS_WIFI_PASSWORD, wifi_password);
+    String dri_ua_id = doc["dri"]["ua_id"];
+    prefs.putString(PREFS_DRI_UA_ID, dri_ua_id);
+    String dri_ua_desc = doc["dri"]["ua_desc"];
+    prefs.putString(PREFS_DRI_UA_DESC, dri_ua_desc);
+    String dri_op_id = doc["dri"]["op_id"];
+    prefs.putString(PREFS_DRI_OP_ID, dri_op_id);
+}
+
 String config_wifi_ssid() {
     return prefs.getString(PREFS_WIFI_SSID);
 }
@@ -34,14 +66,14 @@ String config_wifi_password() {
     return prefs.getString(PREFS_WIFI_PASSWORD);
 }
 
-String dri_ua_id() {
+String config_dri_ua_id() {
     return prefs.getString(PREFS_DRI_UA_ID);
 }
 
-String dri_ua_desc() {
+String config_dri_ua_desc() {
     return prefs.getString(PREFS_DRI_UA_DESC);
 }
 
-String dri_op_id() {
+String config_dri_op_id() {
     return prefs.getString(PREFS_DRI_OP_ID);
 }
