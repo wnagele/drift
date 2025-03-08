@@ -3,19 +3,30 @@
 #include <ESPmDNS.h>
 #include <ESPAsyncWebServer.h>
 #include <ESPAsyncHTTPUpdateServer.h>
+#include <TaskScheduler.h>
 #include "betaflight_mavlink.h"
 #include "dri.h"
 #include "dash.h"
 #include "config.h"
+#include "status.h"
 
 ESPAsyncHTTPUpdateServer updateServer;
 AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
+
+Scheduler scheduler;
 
 mavlink_state_t mavlink_state;
 ODID_UAS_Data odid_state;
 
 bool armed = false;
 bool gps_fix = false;
+
+void processStatus() {
+    status_process();
+    ws.textAll(status_get());
+}
+Task taskProcessStatus(1*TASK_SECOND, TASK_FOREVER, &processStatus, &scheduler, true);
 
 void setup() {
     Serial.begin(9600);
@@ -36,6 +47,7 @@ void setup() {
     updateServer.setup(&server);
 
     server.begin();
+    server.addHandler(&ws);
     server.onNotFound([](AsyncWebServerRequest * request) { request->send(404); });
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         AsyncWebServerResponse *response = request->beginResponse(200, "text/html", DASH, sizeof(DASH));
@@ -83,6 +95,7 @@ void loop() {
                     armed = false;
                     break;
             }
+            status_telemetry_rcvd();
             break;
         case GPS_RAW_INT:
             gps_fix = mavlink_state.gps_raw_int.fix_type >= GPS_FIX_TYPE_3D_FIX;
@@ -104,6 +117,7 @@ void loop() {
                 relative_alt,
                 hdg
             );
+            status_gnss_rcvd();
             break;
         }
         case GPS_GLOBAL_ORIGIN:
@@ -117,5 +131,8 @@ void loop() {
             );
             break;
     }
+
     dri_transmit(&odid_state);
+
+    scheduler.execute();
 }
