@@ -20,3 +20,7 @@ body,
 .ant-card {
     margin-bottom: 5px;
 }
+
+.ant-col {
+    padding: 5px;
+}
