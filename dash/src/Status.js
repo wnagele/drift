@@ -21,14 +21,6 @@ const Status = () => {
     const url = 'ws://' + window.location.host + '/ws';
     const websocket = new WebSocket(url);
 
-    websocket.onopen = () => {
-      message.success('Connection opened');
-    };
-
-    websocket.onclose = () => {
-      message.error('Connection closed');
-    };
-
     websocket.onerror = (err) => {
       console.error('WebSocket error: ', err);
       message.error('Connection error occured');
