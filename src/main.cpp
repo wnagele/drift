@@ -24,9 +24,13 @@ bool gps_fix = false;
 
 void processStatus() {
     status_process();
+}
+Task taskProcessStatus(3*TASK_SECOND, TASK_FOREVER, &processStatus, &scheduler, true);
+
+void sendStatus() {
     ws.textAll(status_get());
 }
-Task taskProcessStatus(1*TASK_SECOND, TASK_FOREVER, &processStatus, &scheduler, true);
+Task taskSendStatus(1*TASK_SECOND, TASK_FOREVER, &sendStatus, &scheduler, true);
 
 void setup() {
     Serial.begin(9600);
