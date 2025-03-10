@@ -20,8 +20,11 @@ const Status = () => {
   useEffect(() => {
     const url = 'ws://' + window.location.host + '/ws';
     const websocket = new WebSocket(url);
+    var shuttingDown = false;
 
     websocket.onerror = (err) => {
+      if (shuttingDown)
+        return;
       console.error('WebSocket error: ', err);
       message.error('Connection error occured');
     };
@@ -38,7 +41,10 @@ const Status = () => {
       }
     };
 
-    return () => websocket.close();
+    return () => {
+      shuttingDown = true;
+      websocket.close()
+    };
   }, []);
 
   return (
