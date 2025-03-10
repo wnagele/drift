@@ -20,8 +20,11 @@ const Status = () => {
   useEffect(() => {
     const url = 'ws://' + window.location.host + '/ws';
     const websocket = new WebSocket(url);
+    var shuttingDown = false;
 
     websocket.onerror = (err) => {
+      if (shuttingDown)
+        return;
       console.error('WebSocket error: ', err);
       message.error('Connection error occured');
     };
@@ -38,18 +41,21 @@ const Status = () => {
       }
     };
 
-    return () => websocket.close();
+    return () => {
+      shuttingDown = true;
+      websocket.close()
+    };
   }, []);
 
   return (
     <>
-      <Row>
-        <Col span={3}>Telemetry</Col>
-        <Col span={1}>{renderStatus(telemetryState)}</Col>
+      <Row gutter={16}>
+        <Col className="gutter-row" span={6}>Telemetry</Col>
+        <Col className="gutter-row" span={6}>{renderStatus(telemetryState)}</Col>
       </Row>
-      <Row>
-        <Col span={3}>GNSS</Col>
-        <Col span={1}>{renderStatus(gnssState)}</Col>
+      <Row  gutter={16}>
+        <Col className="gutter-row" span={6}>GNSS</Col>
+        <Col className="gutter-row" span={6}>{renderStatus(gnssState)}</Col>
       </Row>
     </>
   );
