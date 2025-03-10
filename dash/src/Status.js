@@ -43,13 +43,13 @@ const Status = () => {
 
   return (
     <>
-      <Row>
-        <Col span={3}>Telemetry</Col>
-        <Col span={1}>{renderStatus(telemetryState)}</Col>
+      <Row gutter={16}>
+        <Col className="gutter-row" span={6}>Telemetry</Col>
+        <Col className="gutter-row" span={6}>{renderStatus(telemetryState)}</Col>
       </Row>
-      <Row>
-        <Col span={3}>GNSS</Col>
-        <Col span={1}>{renderStatus(gnssState)}</Col>
+      <Row  gutter={16}>
+        <Col className="gutter-row" span={6}>GNSS</Col>
+        <Col className="gutter-row" span={6}>{renderStatus(gnssState)}</Col>
       </Row>
     </>
   );
