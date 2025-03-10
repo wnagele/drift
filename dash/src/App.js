@@ -35,7 +35,7 @@ const App = () => {
 
   return (
     <Layout>
-      <Sider>
+      <Sider breakpoint="md">
         <Menu theme="dark"
               items={items}
               defaultSelectedKeys={ [ "status" ] }
