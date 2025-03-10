@@ -36,6 +36,18 @@ const App = () => {
   return (
     <Layout>
       <Sider breakpoint="md">
+        <div style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "20px",
+            fontWeight: "bold",
+            color: "white",
+            textAlign: "center",
+            padding: "10px"
+          }}>
+          DRIFT
+        </div>
         <Menu theme="dark"
               items={items}
               defaultSelectedKeys={ [ "status" ] }
