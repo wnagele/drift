@@ -22,12 +22,21 @@ jobs:
           python-version: '3.11'
       - name: Install PlatformIO
         run: pip install --upgrade platformio
+      - name: Install esptool
+        run: pip install --upgrade esptool
       - name: Build
         run: pio run -e esp32_c3_devkit
       - name: Package
         run: |
           mkdir .pio/package
-          mv .pio/build/esp32_c3_devkit/firmware.bin .pio/package/firmware-esp32_c3_devkit-${{ github.sha }}.bin
+          esptool.py --chip esp32c3 \
+                     merge_bin \
+                     -o .pio/package/firmware-esp32_c3_devkit-${{ github.sha }}-full.bin \
+                     0x0000 .pio/build/esp32_c3_devkit/bootloader.bin \
+                     0x8000 .pio/build/esp32_c3_devkit/partitions.bin \
+                     0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
+                     0x10000 .pio/build/esp32_c3_devkit/firmware.bin
+          cp .pio/build/esp32_c3_devkit/firmware.bin .pio/package/firmware-esp32_c3_devkit-${{ github.sha }}-ota.bin
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
