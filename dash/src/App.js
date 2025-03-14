@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
-import { Layout, Menu } from 'antd';
+import React, { useEffect, useState } from 'react';
+import { Layout, Menu, message } from 'antd';
 import { InfoCircleOutlined, EditOutlined } from '@ant-design/icons';
 import Status from './Status';
 import Config from './Config';
+import axios from 'axios';
 
-const { Content, Sider } = Layout;
+const API_ENDPOINT = '/debug/info';
+
+const { Content, Sider, Footer } = Layout;
 
 const items = [
   {
@@ -21,6 +24,27 @@ const items = [
 
 const App = () => {
   const [selectedKey, setSelectedKey] = useState("status");
+  const [buildInfo, setBuildInfo] = useState("LOADING");
+
+  useEffect(() => {
+    const getBuildInfo = async () => {
+      try {
+        const { data } = await axios.get(API_ENDPOINT);
+        if (data["version"] !== null) {
+          setBuildInfo(data["version"]);
+        } else if (data["git_ref"] !== null) {
+          setBuildInfo(data["git_ref"].substring(0, 7));
+        } else if (data["build_time"] !== null) {
+          setBuildInfo(data["build_time"]);
+        } else {
+          setBuildInfo("UNKNOWN");
+        }
+      } catch (error) {
+        message.error("Could not get build info.");
+      }
+    };
+    getBuildInfo();
+  });
 
   const renderContent = () => {
     switch (selectedKey) {
@@ -53,9 +77,12 @@ const App = () => {
               defaultSelectedKeys={ [ "status" ] }
               onClick={(e) => setSelectedKey(e.key)} />
       </Sider>
-      <Content>
-        {renderContent()}
-      </Content>
+      <Layout>
+        <Content>
+          {renderContent()}
+        </Content>
+        <Footer>Build Info: {buildInfo}</Footer>
+      </Layout>
     </Layout>
   );
 };

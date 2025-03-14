@@ -16,6 +16,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Setup Debug Info
+        env:
+          DEBUG_GIT_REF: ${{ github.sha }}
+        run: |
+          sed -i "1s/^/#define DEBUG_GIT_REF \"${DEBUG_GIT_REF}\"\n/" src/debug.h
+          sed -i "1s/^/#define DEBUG_BUILD_TIME \"$(date -Iseconds)\"\n/" src/debug.h
+          grep '^#define DEBUG_' src/debug.h
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
