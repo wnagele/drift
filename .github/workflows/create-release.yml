@@ -35,7 +35,7 @@ jobs:
                      0x8000 .pio/build/esp32_c3_devkit/partitions.bin \
                      0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
                      0x10000 .pio/build/esp32_c3_devkit/firmware.bin
-          mv .pio/build/esp32_c3_devkit/firmware.bin .pio/package/firmware-esp32_c3_devkit-${{ github.ref_name }}-ota.bin
+          cp .pio/build/esp32_c3_devkit/firmware.bin .pio/package/firmware-esp32_c3_devkit-${{ github.ref_name }}-ota.bin
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
