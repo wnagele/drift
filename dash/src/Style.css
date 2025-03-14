@@ -13,8 +13,15 @@ body,
 .ant-menu {
     padding: 10px;
 }
+
 .ant-layout-content {
     padding: 25px;
+}
+
+.ant-layout-footer {
+    text-align: center;
+    color: lightgrey;
+    word-wrap: break-word;
 }
 
 .ant-card {
