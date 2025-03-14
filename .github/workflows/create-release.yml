@@ -22,6 +22,7 @@ jobs:
         run: |
           sed -i "1s/^/#define DEBUG_VERSION \"${DEBUG_VERSION}\"\n/" src/debug.h
           sed -i "1s/^/#define DEBUG_GITREF \"${DEBUG_GITREF}\"\n/" src/debug.h
+          sed -i "1s/^/#define DEBUG_BUILD_TIME \"$(date -Iseconds)\"\n/" src/debug.h
           grep '^#define DEBUG_' src/debug.h
       - name: Setup Python
         uses: actions/setup-python@v5

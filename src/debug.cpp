@@ -8,11 +8,15 @@
 #ifndef DEBUG_GITREF
 #define DEBUG_GITREF serialized("null")
 #endif
+#ifndef DEBUG_BUILDTIME
+#define DEBUG_BUILDTIME serialized("null")
+#endif
 
 String debug_info() {
     JsonDocument doc;
     doc["version"] = DEBUG_VERSION;
     doc["git_ref"] = DEBUG_GITREF;
+    doc["build_time"] = DEBUG_BUILDTIME;
     String buf;
     serializeJson(doc, buf);
     return buf;
