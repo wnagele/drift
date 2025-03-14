@@ -9,6 +9,7 @@
 #include "dash.h"
 #include "config.h"
 #include "status.h"
+#include "debug.h"
 
 ESPAsyncHTTPUpdateServer updateServer;
 AsyncWebServer server(80);
@@ -69,6 +70,10 @@ void setup() {
         request->send(200);
         delay(100);
         ESP.restart();
+    });
+    server.on("/debug/info", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", debug_info());
+        request->send(response);
     });
 
     mavlink_init(&mavlink_state);
