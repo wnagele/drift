@@ -15,6 +15,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Setup Debug Info
+        env:
+          DEBUG_VERSION: ${{ github.ref_name }}
+          DEBUG_GITREF: ${{ github.sha }}
+        run: |
+          sed -i "1s/^/#define DEBUG_VERSION \"${DEBUG_VERSION}\"\n/" debug.h
+          sed -i "1s/^/#define DEBUG_GITREF \"${DEBUG_GITREF}\"\n/" debug.h
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
