@@ -1,0 +1,11 @@
+{
+  "wifi": {
+    "ssid": "DRIFT_TEST01",
+    "password": "test-password-123"
+  },
+  "dri": {
+    "ua_id": "1DRIFT000TEST00001",
+    "ua_desc": "DRIFT test fixture",
+    "op_id": "TEST-OPERATOR-1"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "type": "status",
+  "telemetry": true,
+  "gnss": false
+}

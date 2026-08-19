@@ -4,13 +4,95 @@ on:
   pull_request:
     paths-ignore:
       - 'site/**'
-      - 'dash/**'
 
 permissions:
   contents: read
   id-token: write
 
 jobs:
+  fixtures-fresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Fixtures match their generators
+        run: |
+          make fixtures
+          git diff --exit-code -- test/fixtures
+
+  firmware-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Native Unit Tests
+        run: pio test -e native
+
+  firmware-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Build E2E Firmware
+        run: pio run -e esp32_c3_e2e
+      - name: Build E2E Image
+        run: docker build -f test/e2e/docker/Dockerfile -t drift-e2e test/e2e/docker
+      - name: E2E Tests
+        run: docker run --rm -v "$PWD:/work:ro" drift-e2e
+
+  dash-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Dependencies
+        run: npm ci
+        working-directory: dash
+      - name: Unit Tests
+        run: npm test
+        working-directory: dash
+
+  dash-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Dependencies
+        run: npm ci
+        working-directory: dash
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: dash
+      - name: E2E Tests
+        run: npm run test:e2e
+        working-directory: dash
+
   build:
     runs-on: ubuntu-latest
     steps:

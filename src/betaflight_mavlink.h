@@ -1,3 +1,6 @@
+#ifndef DRIFT_BETAFLIGHT_MAVLINK_H
+#define DRIFT_BETAFLIGHT_MAVLINK_H
+
 #include <MAVLink.h>
 
 typedef struct {
@@ -17,3 +20,7 @@ typedef enum mavlink_type {
 
 void mavlink_init(mavlink_state_t *state);
 mavlink_type_t mavlink_parse(mavlink_state_t *state);
+mavlink_type_t mavlink_parse_byte(mavlink_state_t *state, uint8_t data);
+void mavlink_reset(mavlink_state_t *state);
+
+#endif

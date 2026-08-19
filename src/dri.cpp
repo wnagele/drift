@@ -1,55 +1,84 @@
-#include <Arduino.h>
-#include <esp32-hal.h>
-#include <BLEDevice.h>
+#include <string.h>
+#include "ble.h"
 #include "dri.h"
-#include "config.h"
 
-#define DRI_INTERVAL 20         // ms
-#define DRI_GUARD_MULTIPLIER 2  // ensure there is sufficient time to broadcast
+static ODID_Message_encoded encoded;
+static uint8_t msg_counter = 0;
+static uint8_t schedule_counter = 0;
+static unsigned long last = 0;
 
-#define DRI_UUID 0xFFFA         // ASTM
-#define DRI_APP_CODE 0x0D       // RD
-
-ODID_Message_encoded encoded;
-uint8_t counter = 0;
-uint8_t schedule_counter = 0;
-unsigned long last;
-
-void ble_transmit(ODID_Message_encoded encoded) {
-        uint8_t buf[ODID_MESSAGE_SIZE + 2];
-        memset(&buf, 0, sizeof(buf));
-        buf[0] = (uint8_t)DRI_APP_CODE;
-        buf[1] = counter++;
-        for (int i = 0; i < ODID_MESSAGE_SIZE; i++)
-            buf[2 + i] = encoded.rawData[i];
-
-        BLEAdvertisementData adv_data;
-        adv_data.setServiceData(BLEUUID((uint16_t)DRI_UUID), std::string((char*)buf, sizeof(buf)));
-
-        BLEAdvertising *adv = BLEDevice::getAdvertising();
-        adv->setAdvertisementData(adv_data);
+bool dri_due(unsigned long last_due, unsigned long now) {
+    return now - last_due > DRI_INTERVAL * DRI_GUARD_MULTIPLIER;
 }
 
-void dri_init(ODID_UAS_Data *data) {
-    odid_initUasData(data);
+uint8_t dri_counter_next(uint8_t schedule) {
+    return schedule >= DRI_SCHEDULE_PERIOD ? 1 : schedule + 1;
+}
 
-    String ua_id = config_dri_ua_id();
-    if (ua_id != "" && ua_id.length() <= ODID_ID_SIZE) {
+uint8_t dri_slot_type(uint8_t schedule) {
+    switch (schedule) {
+        case 1:
+            return DRI_SLOT_BASIC_ID;
+        case 2:
+            return DRI_SLOT_SELF_ID;
+        case 3:
+            return DRI_SLOT_OPERATOR_ID;
+        case 4:
+            return DRI_SLOT_SYSTEM;
+        default:
+            return DRI_SLOT_LOCATION;
+    }
+}
+
+bool dri_encode_slot(ODID_UAS_Data *data, uint8_t schedule, ODID_Message_encoded *out) {
+    memset(out, 0, sizeof(ODID_Message_encoded));
+    int rc;
+    switch (dri_slot_type(schedule)) {
+        case DRI_SLOT_BASIC_ID:
+            rc = encodeBasicIDMessage((ODID_BasicID_encoded*) out, &data->BasicID[0]);
+            break;
+        case DRI_SLOT_SELF_ID:
+            rc = encodeSelfIDMessage((ODID_SelfID_encoded*) out, &data->SelfID);
+            break;
+        case DRI_SLOT_OPERATOR_ID:
+            rc = encodeOperatorIDMessage((ODID_OperatorID_encoded*) out, &data->OperatorID);
+            break;
+        case DRI_SLOT_SYSTEM:
+            rc = encodeSystemMessage((ODID_System_encoded*) out, &data->System);
+            break;
+        default:
+            rc = encodeLocationMessage((ODID_Location_encoded*) out, &data->Location);
+            break;
+    }
+    return rc == ODID_SUCCESS;
+}
+
+size_t dri_build_service_data(uint8_t msg_counter, const ODID_Message_encoded *enc, uint8_t *out_buf) {
+    memset(out_buf, 0, ODID_MESSAGE_SIZE + 2);
+    out_buf[0] = (uint8_t)DRI_APP_CODE;
+    out_buf[1] = msg_counter;
+    for (int i = 0; i < ODID_MESSAGE_SIZE; i++)
+        out_buf[2 + i] = enc->rawData[i];
+    return ODID_MESSAGE_SIZE + 2;
+}
+
+void dri_populate_identity(ODID_UAS_Data *data, const char *ua_id, const char *op_id, const char *ua_desc) {
+    if (ua_id[0] != '\0' && strlen(ua_id) <= ODID_ID_SIZE) {
         data->BasicID[0].IDType = ODID_IDTYPE_SERIAL_NUMBER;
-        strncpy(data->BasicID[0].UASID, ua_id.c_str(), ODID_ID_SIZE);
+        strncpy(data->BasicID[0].UASID, ua_id, ODID_ID_SIZE);
     }
-
-    String op_id = config_dri_op_id();
-    if (op_id != "" && op_id.length() <= ODID_ID_SIZE) {
+    if (op_id[0] != '\0' && strlen(op_id) <= ODID_ID_SIZE) {
         data->OperatorID.OperatorIdType = ODID_OPERATOR_ID;
-        strncpy(data->OperatorID.OperatorId, op_id.c_str(), ODID_ID_SIZE);
+        strncpy(data->OperatorID.OperatorId, op_id, ODID_ID_SIZE);
     }
-
-    String ua_desc = config_dri_ua_desc();
-    if (ua_desc != "" && ua_desc.length() <= ODID_STR_SIZE) {
+    if (ua_desc[0] != '\0' && strlen(ua_desc) <= ODID_STR_SIZE) {
         data->SelfID.DescType = ODID_DESC_TYPE_TEXT;
-        strncpy(data->SelfID.Desc, ua_desc.c_str(), ODID_STR_SIZE);
+        strncpy(data->SelfID.Desc, ua_desc, ODID_STR_SIZE);
     }
+}
+
+void dri_init(ODID_UAS_Data *data, unsigned long now) {
+    odid_initUasData(data);
 
     /*
     data->BasicID[0].UAType = ODID_UATYPE_HELICOPTER_OR_MULTIROTOR;
@@ -68,82 +97,20 @@ void dri_init(ODID_UAS_Data *data) {
     data->System.AreaCeiling = 50;
     */
 
-    BLEDevice::init(config_wifi_ssid().c_str());
-    BLEAdvertising *adv = BLEDevice::getAdvertising();
-    adv->setMinInterval(DRI_INTERVAL / 0.625);
-    adv->setMaxInterval(DRI_INTERVAL / 0.625);
-    adv->start();
-
-    last = millis();
+    msg_counter = 0;
+    schedule_counter = 0;
+    last = now;
 }
 
-void dri_transmit(ODID_UAS_Data *data) {
-    unsigned long now = millis();
-    if (now - last > DRI_INTERVAL * DRI_GUARD_MULTIPLIER) {
-        last = now;
+void dri_transmit(ODID_UAS_Data *data, unsigned long now) {
+    if (!dri_due(last, now))
+        return;
+    last = now;
 
-        switch (++schedule_counter) {
-            case 1:
-                memset(&encoded, 0, sizeof(ODID_Message_encoded));
-                encodeBasicIDMessage((ODID_BasicID_encoded*) &encoded, &data->BasicID[0]);
-                ble_transmit(encoded);
-                break;
-            case 2:
-                memset(&encoded, 0, sizeof(ODID_Message_encoded));
-                encodeSelfIDMessage((ODID_SelfID_encoded*) &encoded, &data->SelfID);
-                ble_transmit(encoded);
-                break;
-            case 3:
-                memset(&encoded, 0, sizeof(ODID_Message_encoded));
-                encodeOperatorIDMessage((ODID_OperatorID_encoded*) &encoded, &data->OperatorID);
-                ble_transmit(encoded);
-                break;
-            case 4:
-                memset(&encoded, 0, sizeof(ODID_Message_encoded));
-                encodeSystemMessage((ODID_System_encoded*) &encoded, &data->System);
-                ble_transmit(encoded);
-                break;
-            default:
-                memset(&encoded, 0, sizeof(ODID_Message_encoded));
-                encodeLocationMessage((ODID_Location_encoded*) &encoded, &data->Location);
-                ble_transmit(encoded);
-                break;
-        }
-        if (schedule_counter >= (1000 / DRI_INTERVAL / DRI_GUARD_MULTIPLIER))
-            schedule_counter = 0;
-
-        /*
-        TODO - should we send all of these?
-
-        for (uint8_t i = 0; i < ODID_BASIC_ID_MAX_MESSAGES; i++) {
-            memset(&encoded, 0, sizeof(ODID_Message_encoded));
-            encodeBasicIDMessage((ODID_BasicID_encoded*) &encoded, &data->BasicID[i]);
-            ble_transmit(encoded);
-        }
-
-        memset(&encoded, 0, sizeof(ODID_Message_encoded));
-        encodeLocationMessage((ODID_Location_encoded*) &encoded, &data->Location);
-        ble_transmit(encoded);
-
-        for (uint8_t i = 0; i < ODID_AUTH_MAX_PAGES; i++) {
-            memset(&encoded, 0, sizeof(ODID_Message_encoded));
-            encodeAuthMessage((ODID_Auth_encoded*) &encoded, &data->Auth[i]);
-            ble_transmit(encoded);
-        }
-
-        memset(&encoded, 0, sizeof(ODID_Message_encoded));
-        encodeSelfIDMessage((ODID_SelfID_encoded*) &encoded, &data->SelfID);
-        ble_transmit(encoded);
-
-        memset(&encoded, 0, sizeof(ODID_Message_encoded));
-        encodeOperatorIDMessage((ODID_OperatorID_encoded*) &encoded, &data->OperatorID);
-        ble_transmit(encoded);
-
-        memset(&encoded, 0, sizeof(ODID_Message_encoded));
-        encodeSystemMessage((ODID_System_encoded*) &encoded, &data->System);
-        ble_transmit(encoded);
-        */
-    }
+    schedule_counter = dri_counter_next(schedule_counter);
+    if (!dri_encode_slot(data, schedule_counter, &encoded))
+        return;  // encoder rejected the data: skip the slot rather than broadcast an empty message
+    ble_send(msg_counter++, &encoded);
 }
 
 void dri_update_status(ODID_UAS_Data *data, ODID_status_t status) {
