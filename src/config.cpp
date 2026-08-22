@@ -1,30 +1,27 @@
-#include <Preferences.h>
 #include <ArduinoJson.h>
-#include "utils.h"
 
 #include "config.h"
 
-#define PREFS_NAMESPACE "drift"
-#define PREFS_WIFI_SSID "wifi_ssid"
-#define PREFS_WIFI_PASSWORD "wifi_password"
-#define PREFS_DRI_UA_ID "dri_ua_id"
-#define PREFS_DRI_UA_DESC "dri_ua_desc"
-#define PREFS_DRI_OP_ID "dri_op_id"
+#define KEY_WIFI_SSID "wifi_ssid"
+#define KEY_WIFI_PASSWORD "wifi_password"
+#define KEY_DRI_UA_ID "dri_ua_id"
+#define KEY_DRI_UA_DESC "dri_ua_desc"
+#define KEY_DRI_OP_ID "dri_op_id"
 
-Preferences prefs;
+static const ConfigStorage *storage;
 
-void config_init() {
-    prefs.begin(PREFS_NAMESPACE, false);
-    if (!prefs.isKey(PREFS_WIFI_SSID))
-        prefs.putString(PREFS_WIFI_SSID, getDefaultSSID());
-    if (!prefs.isKey(PREFS_WIFI_PASSWORD))
-        prefs.putString(PREFS_WIFI_PASSWORD, "");
-    if (!prefs.isKey(PREFS_DRI_UA_ID))
-        prefs.putString(PREFS_DRI_UA_ID, "");
-    if (!prefs.isKey(PREFS_DRI_UA_DESC))
-        prefs.putString(PREFS_DRI_UA_DESC, "");
-    if (!prefs.isKey(PREFS_DRI_OP_ID))
-        prefs.putString(PREFS_DRI_OP_ID, "");
+void config_init(const ConfigStorage *storage_backend, const String &default_ssid) {
+    storage = storage_backend;
+    if (!storage->isKey(KEY_WIFI_SSID))
+        storage->putString(KEY_WIFI_SSID, default_ssid);
+    if (!storage->isKey(KEY_WIFI_PASSWORD))
+        storage->putString(KEY_WIFI_PASSWORD, "");
+    if (!storage->isKey(KEY_DRI_UA_ID))
+        storage->putString(KEY_DRI_UA_ID, "");
+    if (!storage->isKey(KEY_DRI_UA_DESC))
+        storage->putString(KEY_DRI_UA_DESC, "");
+    if (!storage->isKey(KEY_DRI_OP_ID))
+        storage->putString(KEY_DRI_OP_ID, "");
 }
 
 String config_get() {
@@ -47,33 +44,33 @@ void config_save(String data) {
         return;
     }
     String wifi_ssid = doc["wifi"]["ssid"];
-    prefs.putString(PREFS_WIFI_SSID, wifi_ssid);
+    storage->putString(KEY_WIFI_SSID, wifi_ssid);
     String wifi_password = doc["wifi"]["password"];
-    prefs.putString(PREFS_WIFI_PASSWORD, wifi_password);
+    storage->putString(KEY_WIFI_PASSWORD, wifi_password);
     String dri_ua_id = doc["dri"]["ua_id"];
-    prefs.putString(PREFS_DRI_UA_ID, dri_ua_id);
+    storage->putString(KEY_DRI_UA_ID, dri_ua_id);
     String dri_ua_desc = doc["dri"]["ua_desc"];
-    prefs.putString(PREFS_DRI_UA_DESC, dri_ua_desc);
+    storage->putString(KEY_DRI_UA_DESC, dri_ua_desc);
     String dri_op_id = doc["dri"]["op_id"];
-    prefs.putString(PREFS_DRI_OP_ID, dri_op_id);
+    storage->putString(KEY_DRI_OP_ID, dri_op_id);
 }
 
 String config_wifi_ssid() {
-    return prefs.getString(PREFS_WIFI_SSID);
+    return storage->getString(KEY_WIFI_SSID);
 }
 
 String config_wifi_password() {
-    return prefs.getString(PREFS_WIFI_PASSWORD);
+    return storage->getString(KEY_WIFI_PASSWORD);
 }
 
 String config_dri_ua_id() {
-    return prefs.getString(PREFS_DRI_UA_ID);
+    return storage->getString(KEY_DRI_UA_ID);
 }
 
 String config_dri_ua_desc() {
-    return prefs.getString(PREFS_DRI_UA_DESC);
+    return storage->getString(KEY_DRI_UA_DESC);
 }
 
 String config_dri_op_id() {
-    return prefs.getString(PREFS_DRI_OP_ID);
+    return storage->getString(KEY_DRI_OP_ID);
 }

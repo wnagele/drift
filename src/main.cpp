@@ -1,19 +1,12 @@
 #include <HardwareSerial.h>
-#include <WiFi.h>
-#include <ESPmDNS.h>
-#include <ESPAsyncWebServer.h>
-#include <ESPAsyncHTTPUpdateServer.h>
 #include <TaskScheduler.h>
 #include "betaflight_mavlink.h"
-#include "dri.h"
-#include "dash.h"
+#include "ble.h"
 #include "config.h"
+#include "dri.h"
+#include "net.h"
 #include "status.h"
-#include "debug.h"
-
-ESPAsyncHTTPUpdateServer updateServer;
-AsyncWebServer server(80);
-AsyncWebSocket ws("/ws");
+#include "utils.h"
 
 Scheduler scheduler;
 
@@ -29,56 +22,31 @@ void processStatus() {
 Task taskProcessStatus(3*TASK_SECOND, TASK_FOREVER, &processStatus, &scheduler, true);
 
 void sendStatus() {
-    ws.textAll(status_get());
+    net_broadcast(status_get());
 }
 Task taskSendStatus(1*TASK_SECOND, TASK_FOREVER, &sendStatus, &scheduler, true);
 
 void setup() {
     Serial.begin(9600);
 
-    config_init();
+    config_init(config_storage_esp(), getDefaultSSID());
 
-    String wifi_ssid = config_wifi_ssid();
-    String wifi_password = config_wifi_password();
-    if (wifi_password != "") {
-        WiFi.softAP(wifi_ssid, wifi_password);
-    } else {
-        WiFi.softAP(wifi_ssid);
-    }
+    net_init();
 
-    MDNS.begin("drift");
-    MDNS.addService("http", "tcp", 80);
-
-    updateServer.setup(&server);
-
-    server.begin();
-    server.addHandler(&ws);
-    server.onNotFound([](AsyncWebServerRequest * request) { request->send(404); });
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        AsyncWebServerResponse *response = request->beginResponse(200, "text/html", DASH, sizeof(DASH));
-        response->addHeader("Content-Encoding", "gzip");
-        request->send(response);
-    });
-    server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest *request) {
-        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", config_get());
-        request->send(response);
-    });
-    server.on("/api/config", HTTP_POST, [](AsyncWebServerRequest *request){
-        request->send(400);
-    }, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-        config_save((char *)data);
-        request->send(200);
-        delay(100);
-        ESP.restart();
-    });
-    server.on("/debug/info", HTTP_GET, [](AsyncWebServerRequest *request) {
-        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", debug_info());
-        request->send(response);
-    });
+    ble_init(config_wifi_ssid().c_str());
 
     mavlink_init(&mavlink_state);
 
-    dri_init(&odid_state);
+    dri_init(&odid_state, millis());
+
+    dri_populate_identity(
+        &odid_state,
+        config_dri_ua_id().c_str(),
+        config_dri_op_id().c_str(),
+        config_dri_ua_desc().c_str()
+    );
+
+    Serial.println("DRIFT boot"); // boot marker
 }
 
 void loop() {
@@ -116,13 +84,20 @@ void loop() {
             float hdg = INV_DIR;
             if (armed) {
                 relative_alt = mavlink_state.global_position_int.relative_alt / (float)1000;
-                hdg = mavlink_state.global_position_int.hdg;
+                if (relative_alt < MIN_ALT || relative_alt > MAX_ALT)
+                    relative_alt = INV_ALT;   // out of ODID range: report "unknown"
+                hdg = mavlink_state.global_position_int.hdg / (float)100;
+                if (hdg > MAX_DIR)
+                    hdg = INV_DIR;            // incl. MAVLink's UINT16_MAX "heading unknown"
             }
+            float alt = mavlink_state.global_position_int.alt / (float)1000;
+            if (alt < MIN_ALT || alt > MAX_ALT)
+                alt = INV_ALT;                // out of ODID range: report "unknown"
             dri_update_location(
                 &odid_state,
                 mavlink_state.global_position_int.lat / (double)10000000,
                 mavlink_state.global_position_int.lon / (double)10000000,
-                mavlink_state.global_position_int.alt / (float)1000,
+                alt,
                 relative_alt,
                 hdg
             );
@@ -141,7 +116,7 @@ void loop() {
             break;
     }
 
-    dri_transmit(&odid_state);
+    dri_transmit(&odid_state, millis());
 
     scheduler.execute();
 }

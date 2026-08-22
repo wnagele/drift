@@ -44,7 +44,7 @@ const App = () => {
       }
     };
     getBuildInfo();
-  });
+  }, []);
 
   const renderContent = () => {
     switch (selectedKey) {

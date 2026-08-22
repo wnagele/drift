@@ -1,0 +1,6 @@
+# Generated content
+src/dash.cpp linguist-generated=true -diff
+src/dash.h linguist-generated=true
+dash/package-lock.json linguist-generated=true -diff
+test/fixtures/mavlink/*.bin linguist-generated=true -diff
+test/fixtures/odid/*.bin linguist-generated=true -diff

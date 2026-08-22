@@ -1,5 +1,6 @@
 node_modules/
-package-lock.json
 bundle.js*
 dash.cpp
 dash.h
+playwright-report/
+test-results/
