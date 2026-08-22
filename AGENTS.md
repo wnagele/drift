@@ -11,8 +11,12 @@ gzipped from the device's Wi-Fi SoftAP for config and status.
   Hardware/platform code is confined to `#ifdef` blocks at the bottom of a file
   or to a whole-file no-op twin, so every module also compiles on the host
   (`native` test env). Pure decisions are extracted into testable seams.
-- `lib/libopendroneid/` — vendored opendroneid-core-c (`opendroneid.{c,h}`), the
-  reference ODID encoder. Picked up automatically as a PlatformIO lib.
+- `lib/libopendroneid/` — vendored opendroneid-core-c (`opendroneid.{c,h}` plus
+  `wifi.c`/`odid_wifi.h`, the Wi-Fi Beacon/NAN frame builders), the reference
+  ODID encoder. Picked up automatically as a PlatformIO lib. Two small local
+  patches (marked `DRIFT local patch` in `wifi.c`) must be re-applied on
+  refresh: a macOS `byteswap.h` fallback and the `<time.h>` include for
+  Arduino core 3.x.
 - `dash/` — React 18 + antd dashboard, bundled and gzipped into `src/dash.{h,cpp}`.
 - `test/` — host unit tests, fixtures + generators, and the QEMU/gdb e2e suite.
 - `site/` — Jekyll documentation site (deployed separately, excluded from the
