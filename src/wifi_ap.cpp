@@ -6,5 +6,6 @@ WifiApParams wifi_ap_params() {
     params.ssid = config_wifi_ssid();
     params.password = config_wifi_password();
     params.secure = params.password != "";
+    params.channel = WIFI_AP_CHANNEL;
     return params;
 }
