@@ -37,10 +37,12 @@ void net_init() {
     // Open vs. WPA softAP is a config decision (wifi_ap.h, natively tested);
     // this side only owns the WiFi calls themselves.
     WifiApParams ap = wifi_ap_params();
+    // An empty passphrase keeps the network open (AP.cpp treats "" like NULL);
+    // the channel is pinned by wifi_ap_params() (see WIFI_AP_CHANNEL).
     if (ap.secure)
-        WiFi.softAP(ap.ssid, ap.password);
+        WiFi.softAP(ap.ssid, ap.password, ap.channel);
     else
-        WiFi.softAP(ap.ssid);
+        WiFi.softAP(ap.ssid, "", ap.channel);
 
     MDNS.begin("drift");
     MDNS.addService("http", "tcp", 80);

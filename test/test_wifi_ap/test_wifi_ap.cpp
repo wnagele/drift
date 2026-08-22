@@ -60,10 +60,17 @@ void test_saved_empty_password_stays_open() {
     TEST_ASSERT_FALSE(ap.secure);
 }
 
+void test_ap_is_pinned_to_channel_6() {
+    config_init(&mem_storage, "DRIFT_AB");
+    WifiApParams ap = wifi_ap_params();
+    TEST_ASSERT_EQUAL_INT(6, ap.channel);
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_default_config_brings_the_ap_up_open);
     RUN_TEST(test_password_config_brings_the_ap_up_wpa);
     RUN_TEST(test_saved_empty_password_stays_open);
+    RUN_TEST(test_ap_is_pinned_to_channel_6);
     return UNITY_END();
 }
