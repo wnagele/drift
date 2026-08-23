@@ -1,3 +1,5 @@
+import struct
+
 from expectations import ODID_VERSION, SCHEDULE_TO_MESSAGE_TYPE, odid_fixture
 from harness import scenario
 
@@ -34,6 +36,49 @@ def two_packs(records):
 def two_wifi_beacons(records):
     """True once two Wi-Fi beacon refreshes have been captured."""
     return len(records) >= 2
+
+
+def two_wifi_nan_frames(records):
+    """True once two Wi-Fi NAN frames have been captured."""
+    return len(records) >= 2
+
+
+# --- Wi-Fi NAN frame layout (lib/libopendroneid/wifi.c) ----------------------
+
+# The ASTM Remote ID spec pins the NAN cluster id; the network id is the NAN
+# spec's fixed destination for service discovery frames.
+NAN_CLUSTER_ID = bytes([0x50, 0x6F, 0x9A, 0x01, 0x00, 0xFF])
+NAN_NETWORK_ID = bytes([0x51, 0x6F, 0x9A, 0x01, 0x00, 0x00])
+WIFI_ALLIANCE_OUI = bytes([0x50, 0x6F, 0x9A])
+# SHA-256 hash of "org.opendroneid.remoteid" (first 6 bytes).
+ODID_SERVICE_ID = bytes([0x88, 0x69, 0x19, 0x9D, 0x92, 0x09])
+
+
+def wifi_nan_action_frame(mac, counter, pack):
+    """Expected bytes of odid_wifi_build_message_pack_nan_action_frame()."""
+    service_info_length = 1 + len(pack)
+    frame = struct.pack("<HH", 0x00D0, 0)                 # mgmt action header
+    frame += NAN_NETWORK_ID + mac + NAN_CLUSTER_ID + struct.pack("<H", 0)
+    frame += bytes([0x04, 0x09]) + WIFI_ALLIANCE_OUI + bytes([0x13])
+    frame += bytes([0x03]) + struct.pack("<H", 10 + service_info_length)
+    frame += ODID_SERVICE_ID + bytes([0x01, 0x00, 0x10, service_info_length])
+    frame += bytes([counter]) + pack
+    frame += (bytes([0x0E]) + struct.pack("<H", 4) + bytes([0x01])
+              + struct.pack("<H", 0x0200) + bytes([counter]))
+    return frame
+
+
+def wifi_nan_sync_beacon(mac):
+    """Expected bytes of odid_wifi_build_nan_sync_beacon_frame() except the
+    8-byte timestamp, which carries the target's CLOCK_MONOTONIC."""
+    frame = struct.pack("<HH", 0x0080, 0)                 # mgmt beacon header
+    frame += b"\xFF" * 6 + mac + NAN_CLUSTER_ID + struct.pack("<H", 0)
+    frame += b"\x00" * 8 + struct.pack("<HH", 0x0200, 0x0420)
+    frame += bytes([0xDD, 0x22]) + WIFI_ALLIANCE_OUI + bytes([0x13])
+    frame += bytes([0x00]) + struct.pack("<H", 2) + bytes([0xFE, 0xEA])
+    frame += bytes([0x01]) + struct.pack("<H", 13) + mac + bytes([0xEA, 0xFE, 0x00]) + b"\x00" * 4
+    frame += bytes([0x02]) + struct.pack("<H", 6) + ODID_SERVICE_ID
+    return frame
 
 
 @scenario("broadcast: the full 25-slot ODID schedule goes out over BLE")
@@ -135,3 +180,51 @@ def broadcast_wifi_beacon(t):
     # Cadence: one IE refresh per DRI_WIFI_BEACON_INTERVAL (200 ms).
     delta = wifi_beacons[1][3] - wifi_beacons[0][3]
     t.check_eq("wifi beacon interval is ~200 ms", 150 <= delta <= 350, True)
+
+
+@scenario("broadcast: the Wi-Fi NAN frames carry every valid message")
+def broadcast_wifi_nan(t):
+    # The Wi-Fi NAN transport injects raw 802.11 management frames on the
+    # ~512 ms discovery-window cadence (DRI_WIFI_NAN_INTERVAL, the NAN spec's
+    # cluster timing): a sync beacon plus an action frame wrapping the same
+    # message pack the BT5 and Wi-Fi Beacon paths broadcast. The expected
+    # frames below re-derive the vendored builder's layout around the
+    # reference pack; the action-frame counter advances once per transmitted
+    # frame and rides both the service info byte and the trailing service
+    # update indicator, so it is read back out of each capture instead of
+    # assumed.
+    wifi_nan_frames = t.wifi_nan_action_sends(two_wifi_nan_frames)
+
+    # The source MAC embedded in the frames is the target's eFuse base MAC
+    # (SA field of the mgmt header, offset 10); both captures must agree.
+    mac = wifi_nan_frames[0][0][10:16]
+    t.check_eq("wifi nan frames share one source MAC",
+               wifi_nan_frames[1][0][10:16], mac)
+
+    expected_pack = (bytes([0xF2, 25, 5])
+                     + odid_fixture("basic_id") + odid_fixture("location")
+                     + odid_fixture("self_id") + odid_fixture("system")
+                     + odid_fixture("operator_id"))
+    for i, (frame, length, _) in enumerate(wifi_nan_frames[:2]):
+        counter = frame[43]
+        expected = wifi_nan_action_frame(mac, counter, expected_pack)
+        t.check_eq("wifi nan action frame %d content" % i,
+                   (frame, length), (expected, len(expected)))
+        # The counter duplicates into the trailing service update indicator.
+        t.check_eq("wifi nan action frame %d service update indicator" % i,
+                   frame[length - 1], counter)
+    t.check_eq("wifi nan action frame counters increment",
+               wifi_nan_frames[1][0][43], (wifi_nan_frames[0][0][43] + 1) % 256)
+
+    # The sync beacon keeps the NAN cluster alive; only its timestamp (bytes
+    # 24-31, CLOCK_MONOTONIC on the target) is not byte-predictable.
+    wifi_nan_beacons = t.wifi_nan_sync_sends(two_wifi_nan_frames)
+    expected = wifi_nan_sync_beacon(mac)
+    for i, (frame, length, _) in enumerate(wifi_nan_beacons[:2]):
+        t.check_eq("wifi nan sync beacon %d content" % i,
+                   (frame[:24] + frame[32:], length),
+                   (expected[:24] + expected[32:], len(expected)))
+
+    # Cadence: one frame pair per DRI_WIFI_NAN_INTERVAL (512 ms).
+    delta = wifi_nan_beacons[1][2] - wifi_nan_beacons[0][2]
+    t.check_eq("wifi nan beacon interval is ~512 ms", 450 <= delta <= 700, True)

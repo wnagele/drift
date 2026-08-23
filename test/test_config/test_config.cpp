@@ -45,16 +45,20 @@ void test_init_creates_defaults() {
     TEST_ASSERT_TRUE(config_bt5_enabled());
     // The Wi-Fi Beacon transport defaults to on.
     TEST_ASSERT_TRUE(config_wifi_beacon_enabled());
+    // The Wi-Fi NAN transport defaults to off.
+    TEST_ASSERT_FALSE(config_wifi_nan_enabled());
 }
 
 void test_init_preserves_existing_values() {
     kv["wifi_ssid"] = "KEEPME";
     kv["bt5_enabled"] = "0";
     kv["wifi_beacon"] = "0";
+    kv["wifi_nan"] = "1";
     config_init(&mem_storage, "DRIFT_ABCD");
     TEST_ASSERT_EQUAL_STRING("KEEPME", config_wifi_ssid().c_str());
     TEST_ASSERT_FALSE(config_bt5_enabled());
     TEST_ASSERT_FALSE(config_wifi_beacon_enabled());
+    TEST_ASSERT_TRUE(config_wifi_nan_enabled());
 }
 
 // --- BLE5 transport enable --------------------------------------------------
@@ -127,6 +131,45 @@ void test_wifi_beacon_missing_or_absent_field_keeps_default() {
 
     config_save(String("{\"dri\":{\"wifi_beacon_enabled\":\"yes\"}}"));
     TEST_ASSERT_TRUE(config_wifi_beacon_enabled());
+}
+
+// --- Wi-Fi NAN transport enable ------------------------------------------------
+
+void test_wifi_nan_save_enables_and_roundtrips() {
+    // Wi-Fi NAN is opt-in: only an explicit true turns it on, and
+    // config_get() emits the stored state as a JSON boolean.
+    config_init(&mem_storage, "DRIFT_ABCD");
+    TEST_ASSERT_FALSE(config_wifi_nan_enabled());
+    config_save(String("{\"dri\":{\"wifi_nan_enabled\":true}}"));
+    TEST_ASSERT_TRUE(config_wifi_nan_enabled());
+
+    JsonDocument got;
+    TEST_ASSERT_FALSE(deserializeJson(got, config_get()));
+    TEST_ASSERT_TRUE(got["dri"]["wifi_nan_enabled"].as<bool>());
+}
+
+void test_wifi_nan_save_disables() {
+    config_init(&mem_storage, "DRIFT_ABCD");
+    config_save(String("{\"dri\":{\"wifi_nan_enabled\":true}}"));
+    config_save(String("{\"dri\":{\"wifi_nan_enabled\":false}}"));
+    TEST_ASSERT_FALSE(config_wifi_nan_enabled());
+}
+
+void test_wifi_nan_missing_or_absent_field_keeps_default() {
+    // The missing-field rule inverts for the opt-in transport: absent/null/
+    // non-boolean keeps it off, so an older client cannot silently enable
+    // the raw frame injection.
+    config_init(&mem_storage, "DRIFT_ABCD");
+    config_save(String("{\"dri\":{\"wifi_nan_enabled\":true}}"));
+
+    config_save(String("{\"wifi\":{\"ssid\":\"X\"}}"));
+    TEST_ASSERT_FALSE(config_wifi_nan_enabled());
+
+    config_save(String("{\"dri\":{\"wifi_nan_enabled\":null}}"));
+    TEST_ASSERT_FALSE(config_wifi_nan_enabled());
+
+    config_save(String("{\"dri\":{\"wifi_nan_enabled\":\"yes\"}}"));
+    TEST_ASSERT_FALSE(config_wifi_nan_enabled());
 }
 
 void test_save_get_roundtrip_matches_shared_fixture() {
@@ -236,6 +279,9 @@ int main(int, char **) {
     RUN_TEST(test_wifi_beacon_save_disables_and_roundtrips);
     RUN_TEST(test_wifi_beacon_save_reenables);
     RUN_TEST(test_wifi_beacon_missing_or_absent_field_keeps_default);
+    RUN_TEST(test_wifi_nan_save_enables_and_roundtrips);
+    RUN_TEST(test_wifi_nan_save_disables);
+    RUN_TEST(test_wifi_nan_missing_or_absent_field_keeps_default);
     RUN_TEST(test_save_get_roundtrip_matches_shared_fixture);
     RUN_TEST(test_malformed_json_keeps_existing_values);
     RUN_TEST(test_missing_sections_currently_store_null);

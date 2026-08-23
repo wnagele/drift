@@ -8,6 +8,7 @@
 #include "status.h"
 #include "utils.h"
 #include "wifi_beacon.h"
+#include "wifi_nan.h"
 
 Scheduler scheduler;
 
@@ -37,6 +38,12 @@ void setup() {
     ble_init(config_wifi_ssid().c_str());
     ble5_init(config_bt5_enabled());
     wifi_beacon_init(config_wifi_beacon_enabled());
+
+    // The Wi-Fi NAN frames embed the eFuse base MAC (readable before the
+    // WiFi stack starts, unlike the SoftAP's own address).
+    uint8_t src_mac[6];
+    getBaseMac(src_mac);
+    wifi_nan_init(config_wifi_nan_enabled(), src_mac);
 
     mavlink_init(&mavlink_state);
 

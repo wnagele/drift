@@ -12,3 +12,4 @@ String config_dri_ua_desc();
 String config_dri_op_id();
 bool config_bt5_enabled();
 bool config_wifi_beacon_enabled();
+bool config_wifi_nan_enabled();

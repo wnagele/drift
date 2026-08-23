@@ -51,6 +51,9 @@ def defaults(t):
     # The Wi-Fi Beacon transport defaults to on, same pinning.
     t.check_eq("wifi_beacon_enabled defaults to on", t.eval("config_wifi_beacon_enabled()"), 1)
 
+    # The Wi-Fi NAN transport is opt-in and defaults to off.
+    t.check_eq("wifi_nan_enabled defaults to off", t.eval("config_wifi_nan_enabled()"), 0)
+
     # And empty is what the identity population saw at boot: no ID slots
     # configured.
     t.check_eq("no Basic ID on a factory boot",

@@ -9,9 +9,10 @@
 #define KEY_DRI_OP_ID "dri_op_id"
 #define KEY_BT5_ENABLED "bt5_enabled"
 // NVS keys are capped at 15 characters (Preferences, nvs_partition_gen), so
-// the stored key is the transport's short form; the API field is
-// wifi_beacon_enabled.
+// the stored key is the transport's short form; the API fields are
+// wifi_beacon_enabled and wifi_nan_enabled.
 #define KEY_WIFI_BEACON "wifi_beacon"
+#define KEY_WIFI_NAN "wifi_nan"
 
 static const ConfigStorage *storage;
 
@@ -36,6 +37,13 @@ void config_init(const ConfigStorage *storage_backend, const String &default_ssi
     // defaults to on.
     if (!storage->isKey(KEY_WIFI_BEACON))
         storage->putString(KEY_WIFI_BEACON, "1");
+    // Wi-Fi NAN is the one optional transport: every regional profile is
+    // satisfied by the three always-on transports, no phone ecosystem
+    // requires it, and its raw-injected frames cost airtime on the SoftAP's
+    // channel - so it defaults to off, like the reference implementations
+    // ship it.
+    if (!storage->isKey(KEY_WIFI_NAN))
+        storage->putString(KEY_WIFI_NAN, "0");
 }
 
 String config_get() {
@@ -47,6 +55,7 @@ String config_get() {
     doc["dri"]["op_id"] = config_dri_op_id();
     doc["dri"]["bt5_enabled"] = config_bt5_enabled();
     doc["dri"]["wifi_beacon_enabled"] = config_wifi_beacon_enabled();
+    doc["dri"]["wifi_nan_enabled"] = config_wifi_nan_enabled();
     String buf;
     serializeJson(doc, buf);
     return buf;
@@ -75,6 +84,10 @@ void config_save(String data) {
     storage->putString(KEY_BT5_ENABLED, bt5_enabled ? "1" : "0");
     bool wifi_beacon_enabled = doc["dri"]["wifi_beacon_enabled"] | true;
     storage->putString(KEY_WIFI_BEACON, wifi_beacon_enabled ? "1" : "0");
+    // Wi-Fi NAN is opt-in (default off), so the missing-field rule inverts:
+    // an absent or non-boolean value must not silently *enable* the transport.
+    bool wifi_nan_enabled = doc["dri"]["wifi_nan_enabled"] | false;
+    storage->putString(KEY_WIFI_NAN, wifi_nan_enabled ? "1" : "0");
 }
 
 String config_wifi_ssid() {
@@ -105,4 +118,9 @@ bool config_bt5_enabled() {
 
 bool config_wifi_beacon_enabled() {
     return storage->getString(KEY_WIFI_BEACON) != "0";
+}
+
+// Opt-in transport: only an explicit "1" turns it on.
+bool config_wifi_nan_enabled() {
+    return storage->getString(KEY_WIFI_NAN) == "1";
 }

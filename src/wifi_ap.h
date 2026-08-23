@@ -7,8 +7,8 @@
 // open or WPA-protected is a config decision (empty password = open network);
 // it is asserted here instead of only inside the ESP32-only WiFi calls.
 
-// ODID Wi-Fi broadcasts (Beacon vendor IE / NAN) only reach receivers on 
-// channel 6; the AP is pinned there.
+// ODID Wi-Fi broadcasts (Beacon vendor IE / Wi-Fi NAN) only reach receivers
+// on channel 6; the AP is pinned there.
 #define WIFI_AP_CHANNEL 6
 
 struct WifiApParams {

@@ -20,7 +20,8 @@ const Config = () => {
           "dri_ua_desc":  data["dri"]["ua_desc"],
           "dri_op_id":  data["dri"]["op_id"],
           "dri_bt5_enabled": data["dri"]["bt5_enabled"] ?? true,
-          "dri_wifi_beacon_enabled": data["dri"]["wifi_beacon_enabled"] ?? true
+          "dri_wifi_beacon_enabled": data["dri"]["wifi_beacon_enabled"] ?? true,
+          "dri_wifi_nan_enabled": data["dri"]["wifi_nan_enabled"] ?? false
         });
       } catch (error) {
         message.error("Could not get current values.");
@@ -44,7 +45,8 @@ const Config = () => {
           "ua_desc": data["dri_ua_desc"],
           "op_id": data["dri_op_id"],
           "bt5_enabled": data["dri_bt5_enabled"] ?? true,
-          "wifi_beacon_enabled": data["dri_wifi_beacon_enabled"] ?? true
+          "wifi_beacon_enabled": data["dri_wifi_beacon_enabled"] ?? true,
+          "wifi_nan_enabled": data["dri_wifi_nan_enabled"] ?? false
         }
       });
       message.success("Config saved.");
@@ -122,6 +124,14 @@ const Config = () => {
       <Form.Item
         label="Wi-Fi Beacon"
         name="dri_wifi_beacon_enabled"
+        valuePropName="checked"
+      >
+        <Switch />
+      </Form.Item>
+
+      <Form.Item
+        label="Wi-Fi NAN"
+        name="dri_wifi_nan_enabled"
         valuePropName="checked"
       >
         <Switch />

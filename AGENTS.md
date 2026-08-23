@@ -4,16 +4,17 @@
 
 DRIFT is an ESP32-C3 firmware (PlatformIO, Arduino framework) that reads
 MAVLink v1 telemetry from a flight controller and broadcasts Drone Remote ID
-(DRI / ASTM F3411) over BLE 4 legacy advertising, BLE 5 Long Range and a
-Wi-Fi Beacon vendor IE. A React dashboard is served gzipped from the device's
-Wi-Fi SoftAP for config and status.
+(DRI / ASTM F3411) over BLE 4 legacy advertising, BLE 5 Long Range, a
+Wi-Fi Beacon vendor IE and Wi-Fi NAN. A React dashboard is served gzipped
+from the device's Wi-Fi SoftAP for config and status.
 
-- `src/` — firmware (~1k lines of hand-written C++ across 15 modules).
+- `src/` — firmware (~1k lines of hand-written C++ across 17 modules).
   Hardware/platform code is confined to `#ifdef` blocks at the bottom of a file
   or to a whole-file no-op twin, so every module also compiles on the host
   (`native` test env). Pure decisions are extracted into testable seams.
 - `lib/libopendroneid/` — vendored opendroneid-core-c (`opendroneid.{c,h}` plus
-  `wifi.c`/`odid_wifi.h`, the Wi-Fi Beacon/NAN frame builders), the reference
+  `wifi.c`/`odid_wifi.h`, the Wi-Fi Beacon and Wi-Fi NAN frame builders), the
+  reference
   ODID encoder. Picked up automatically as a PlatformIO lib. Two small local
   patches (marked `DRIFT local patch` in `wifi.c`) must be re-applied on
   refresh: a macOS `byteswap.h` fallback and the `<time.h>` include for
@@ -40,31 +41,41 @@ UART (Serial0 on device, Serial1 in e2e) 9600 baud
                              BT5: 1 s guard (dri_pack_due), one Message Pack
                              (odid_message_build_pack) of every valid message
                              Wi-Fi Beacon: 200 ms guard (dri_wifi_beacon_due), the
-                             same Message Pack refreshed in the SoftAP vendor IE
+                              same Message Pack refreshed in the SoftAP vendor IE
+                              Wi-Fi NAN: 512 ms guard (dri_wifi_nan_due), the NAN sync
+                              beacon plus a Message Pack action frame built by the
+                              vendored NAN builders, raw-injected on the SoftAP
   -> ble_frame.cpp           [0]=0x0D app code, [1]=msg counter, payload; the
-                             raw AD structures ([len][0x16][FA FF][...]) for
-                             both transports
+                              raw AD structures ([len][0x16][FA FF][...]) for
+                              both transports
   -> ble.cpp ble_send()      BT4: legacy PDU, service data under UUID 0xFFFA,
-                             20 ms adv interval
+                              20 ms adv interval
      ble.cpp ble_send_pack() BT5 Long Range: Coded PHY S=8, ~1 Hz
      wifi_frame.cpp          the vendor IE ([0xDD][len][FA 0B BC][0x0D][counter]
-                             [pack]) pinned byte-exact against the vendored
-                             beacon frame builder
+                              [pack]) pinned byte-exact against the vendored
+                              beacon frame builder
      wifi_beacon.cpp         esp_wifi_set_vendor_ie() on the SoftAP's beacons
-                             AND probe responses (clear-then-set per refresh),
-                             ~5 Hz
+                              AND probe responses (clear-then-set per refresh),
+                              ~5 Hz
+     wifi_nan.cpp            esp_wifi_80211_tx() of the vendored sync beacon and
+                              action frames on the SoftAP interface (channel 6 =
+                              the NAN cluster channel), one pair per ~512 ms
+                              discovery window
 ```
 
 A parallel path feeds the dashboard: `status.cpp` counters latched into booleans
 by a 3 s TaskScheduler task, pushed as JSON over `/ws` by a 1 s task.
 
 Module map: `main.cpp` (wiring, the only MAVLink→ODID mapping),
-`betaflight_mavlink` (ingest), `dri` (ODID + all three broadcast schedules),
+`betaflight_mavlink` (ingest), `dri` (ODID + all four broadcast schedules),
 `ble_frame`/`ble` (on-air frames + radio), `wifi_frame`/`wifi_beacon`
-(vendor IE bytes + SoftAP registration), `config`/`config_storage`/
+(vendor IE bytes + SoftAP registration), `wifi_nan` (Wi-Fi NAN transport: raw
+802.11 injection - the frames themselves are the vendored builders, no local
+frame seam), `config`/`config_storage`/
 `config_storage_esp` (JSON ⇄ NVS), `http_api` (transport-free routing table),
 `net` (Wi-Fi, async HTTP, WebSocket, OTA), `wifi_ap` (open-vs-WPA decision),
-`status`, `debug` (build provenance), `utils` (default SSID from eFuse MAC).
+`status`, `debug` (build provenance), `utils` (default SSID + Wi-Fi NAN source
+MAC from eFuse MAC).
 
 Testability seams — keep these intact when refactoring:
 
@@ -73,10 +84,14 @@ Testability seams — keep these intact when refactoring:
   tests inject an in-memory map. Booleans ride the string seam as `"1"`/`"0"`.
 - Time is a parameter, never `millis()` inside a module: `dri_init(data, now)`,
   `dri_transmit(data, now)`, `dri_due(last, now)`, `dri_pack_due(last, now)`,
-  `dri_wifi_beacon_due(last, now)`.
+  `dri_wifi_beacon_due(last, now)`, `dri_wifi_nan_due(last, now)`.
 - `http_api_init(dash, dash_len)` injects the dash blob, because the native
   build does not link the generated `dash.cpp`.
 - Value structs instead of I/O: `HttpApiResponse`, `WifiApParams`, `BleAdvFrame`.
+- The Wi-Fi NAN source MAC is injected: `wifi_nan_init(enabled, mac)` (main.cpp
+  passes the eFuse base MAC from `utils::getBaseMac`, readable before the
+  WiFi stack starts), and `wifi_nan_mac()` is what dri.cpp's calls to the
+  vendored frame builders embed.
 - `src/ble.cpp` has three bodies selected by preprocessor: real radio (NimBLE),
   an empty `DRIFT_NO_BLE` stub, and a native recorder (`ble_send_count`,
   `ble_send_counters[]`, `ble_send_messages[]`, `ble_pack_send_count`,
@@ -87,6 +102,13 @@ Testability seams — keep these intact when refactoring:
   device, an empty e2e stub, and a native recorder (`wifi_beacon_send_count`,
   `wifi_beacon_send_counters[]`, `wifi_beacon_send_lens[]`,
   `wifi_beacon_send_bytes[][]`, `wifi_beacon_send_reset()`).
+- `src/wifi_nan.cpp` has the same three-body split (also `DRIFT_NO_NET`):
+  `esp_wifi_80211_tx` on the device, empty e2e stubs, and native recorders
+  (`wifi_nan_sync_send_*`, `wifi_nan_action_send_*`,
+  `wifi_nan_send_reset()` clears both records). The frames are built by the
+  vendored NAN builders in dri.cpp, so unlike the Wi-Fi Beacon IE there is no
+  local frame-builder seam - the native tests pin the recorder bytes directly
+  against the vendored builders' output.
 
 ## Build environments and flags
 
@@ -197,7 +219,7 @@ ODID (no maintained implementation exists).
 | Route | Response |
 | --- | --- |
 | `GET /` | gzipped `DASH` blob, `text/html` |
-| `GET /api/config` | `{wifi:{ssid,password},dri:{ua_id,ua_desc,op_id,bt5_enabled,wifi_beacon_enabled}}` |
+| `GET /api/config` | `{wifi:{ssid,password},dri:{ua_id,ua_desc,op_id,bt5_enabled,wifi_beacon_enabled,wifi_nan_enabled}}` |
 | `POST /api/config` | 200 + reboot (identity is read once at boot); 400 with no body |
 | `GET /debug/info` | `{version,git_ref,build_time}` (nulls in dev builds) |
 | `WS /ws` | `{type:"status",telemetry,gnss}` once per second |
@@ -207,8 +229,10 @@ eFuse MAC, also used as the BLE device name), `wifi_password` (empty ⇒ open AP
 `dri_ua_id` (≤20), `dri_ua_desc` (≤23), `dri_op_id` (≤20), `bt5_enabled`
 (`"1"`/`"0"`, default on; a missing/null/non-boolean POST field keeps it on),
 `wifi_beacon` (same encoding, default on, same missing-field rule; the API
-field is `wifi_beacon_enabled`). Over-length DRI values are silently ignored
-by `dri_populate_identity()`.
+field is `wifi_beacon_enabled`), `wifi_nan` (same encoding, default **off**
+— the one opt-in transport, so the missing-field rule inverts: absent/null/
+non-boolean keeps it off; the API field is `wifi_nan_enabled`). Over-length
+DRI values are silently ignored by `dri_populate_identity()`.
 
 ## CI
 
@@ -225,7 +249,7 @@ publishes `site/` to Pages. PRs touching only `site/**` skip the build workflow.
   at text-producing boundaries and `const char *` for literals and C APIs.
   Module state is `static` at file scope; the only intentionally external
   globals are the `status` flags and the native `ble_send_*` /
-  `wifi_beacon_send_*` recorders.
+  `wifi_beacon_send_*` / `wifi_nan_send_*` recorders.
 - Keep `#ifdef` blocks whole-function or whole-file, never mid-function, and
   prefer extracting the pure decision over adding a guard.
 - Comments explain *why* — the existing ones document real constraints
@@ -248,7 +272,8 @@ publishes `site/` to Pages. PRs touching only `site/**` skip the build workflow.
 - **`ble_send()`'s and `ble_send_pack()`'s `DRIFT_NO_BLE` bodies must stay empty
   and in their own TU.** The gdb harness reads `$a0`/`$a1` (`$a2` for the pack
   length) at function entry to capture broadcasts. Same for
-  `wifi_beacon_send_pack()`'s `DRIFT_NO_NET` body.
+  `wifi_beacon_send_pack()`'s and the `wifi_nan_send_*()`s' `DRIFT_NO_NET`
+  bodies.
 - **The vendor IE refresh must stay a clear-then-set.** `esp_wifi_set_vendor_ie`
   rejects enabling an IE at an index that is already enabled
   (`ESP_ERR_INVALID_ARG`), so every ~5 Hz refresh clears the BEACON and
@@ -260,6 +285,19 @@ publishes `site/` to Pages. PRs touching only `site/**` skip the build workflow.
   so the Wi-Fi Beacon enable is stored as `wifi_beacon` while its API field is
   `wifi_beacon_enabled`. Keep new keys short; the e2e seed writes the same
   strings (test/e2e/nvs_seed.py).
+- **The C3 has no NAN engine** (`SOC_WIFI_NAN_SUPPORT` is absent from its
+  `soc_caps.h`; `esp_wifi_nan_*` exists only on ESP32/S2/C5/C61), which is why
+  the Wi-Fi NAN transport raw-injects the vendored builders' frames via
+  `esp_wifi_80211_tx(WIFI_IF_AP, ..., en_sys_seq=true)` instead of using a NAN
+  stack — the same approach ArduRemoteID ships. The SoftAP's channel 6 pin is
+  what makes that legal: 6 is the NAN cluster channel. Wi-Fi NAN defaults to
+  off (opt-in config) because every regional profile is satisfied without it.
+- **The Wi-Fi NAN action-frame counter advances only on a transmitted frame.**
+  `odid_wifi_build_message_pack_nan_action_frame()` embeds it twice (service
+  info `message_counter` at offset 43 and the trailing `service_update_
+  indicator`), and dri.cpp increments it only when the builder accepts the
+  pack, so a skipped window does not burn counter values the receiver would
+  read as lost frames.
 - **The reference-aircraft constants are duplicated** in
   `test/tools/gen_odid_fixtures.cpp`, `test/test_dri/test_dri.cpp` and
   `test/fixtures/api/config.json`. Changing one requires changing the others.
