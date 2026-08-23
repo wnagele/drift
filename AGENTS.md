@@ -32,37 +32,45 @@ UART (Serial0 on device, Serial1 in e2e) 9600 baud
   -> main.cpp loop()         MAVLink -> ODID semantics (unit conversion, range
                              clamping to ODID "unknown" sentinels, arm/fix gates)
   -> dri.cpp                 dri_update_status/location/operator() into the one
-                             global ODID_UAS_Data
-  -> dri.cpp dri_transmit()  40 ms guard (dri_due), 25-slot round robin
+                             global ODID_UAS_Data, marking messages *Valid
+  -> dri.cpp dri_transmit()  BT4: 40 ms guard (dri_due), 25-slot round robin
                              (1 basic id, 1 self id, 1 operator id, 1 system,
                              21 location per second), vendored encoders
-  -> ble_frame.cpp           [0]=0x0D app code, [1]=msg counter, [2..26]=ODID
-  -> ble.cpp ble_send()      service data under UUID 0xFFFA, 20 ms adv interval
+                             BT5: 1 s guard (dri_pack_due), one Message Pack
+                             (odid_message_build_pack) of every valid message
+  -> ble_frame.cpp           [0]=0x0D app code, [1]=msg counter, payload; the
+                             raw AD structures ([len][0x16][FA FF][...]) for
+                             both transports
+  -> ble.cpp ble_send()      BT4: legacy PDU, service data under UUID 0xFFFA,
+                             20 ms adv interval
+     ble.cpp ble_send_pack() BT5 Long Range: Coded PHY S=8, ~1 Hz
 ```
 
 A parallel path feeds the dashboard: `status.cpp` counters latched into booleans
 by a 3 s TaskScheduler task, pushed as JSON over `/ws` by a 1 s task.
 
 Module map: `main.cpp` (wiring, the only MAVLink→ODID mapping),
-`betaflight_mavlink` (ingest), `dri` (ODID + schedule), `ble_frame`/`ble`
-(on-air frame + radio), `config`/`config_storage`/`config_storage_esp`
-(JSON ⇄ NVS), `http_api` (transport-free routing table), `net` (Wi-Fi, async
-HTTP, WebSocket, OTA), `wifi_ap` (open-vs-WPA decision), `status`, `debug`
-(build provenance), `utils` (default SSID from eFuse MAC).
+`betaflight_mavlink` (ingest), `dri` (ODID + both broadcast schedules),
+`ble_frame`/`ble` (on-air frames + radio), `config`/`config_storage`/
+`config_storage_esp` (JSON ⇄ NVS), `http_api` (transport-free routing table),
+`net` (Wi-Fi, async HTTP, WebSocket, OTA), `wifi_ap` (open-vs-WPA decision),
+`status`, `debug` (build provenance), `utils` (default SSID from eFuse MAC).
 
 Testability seams — keep these intact when refactoring:
 
 - `struct ConfigStorage` (`src/config_storage.h`) — three function pointers;
   production backend is `config_storage_esp()` (Preferences, namespace `drift`),
-  tests inject an in-memory map.
+  tests inject an in-memory map. Booleans ride the string seam as `"1"`/`"0"`.
 - Time is a parameter, never `millis()` inside a module: `dri_init(data, now)`,
-  `dri_transmit(data, now)`, `dri_due(last, now)`.
+  `dri_transmit(data, now)`, `dri_due(last, now)`, `dri_pack_due(last, now)`.
 - `http_api_init(dash, dash_len)` injects the dash blob, because the native
   build does not link the generated `dash.cpp`.
 - Value structs instead of I/O: `HttpApiResponse`, `WifiApParams`, `BleAdvFrame`.
-- `src/ble.cpp` has three bodies selected by preprocessor: real radio, an empty
-  `DRIFT_NO_BLE` stub, and a native recorder (`ble_send_count`,
-  `ble_send_counters[]`, `ble_send_messages[]`, `ble_send_reset()`).
+- `src/ble.cpp` has three bodies selected by preprocessor: real radio (NimBLE),
+  an empty `DRIFT_NO_BLE` stub, and a native recorder (`ble_send_count`,
+  `ble_send_counters[]`, `ble_send_messages[]`, `ble_pack_send_count`,
+  `ble_pack_send_counters[]`, `ble_pack_send_lens[]`,
+  `ble_pack_send_bytes[][]`, `ble_send_reset()` clears both records).
 
 ## Build environments and flags
 
@@ -76,6 +84,17 @@ Testability seams — keep these intact when refactoring:
 a hard `#error`. `DEBUG_VERSION`/`DEBUG_GIT_REF`/`DEBUG_BUILD_TIME` are not
 build flags — CI `sed`-prepends them into `src/debug.h`, and they default to JSON
 `null`.
+
+The BLE stack is `h2zero/NimBLE-Arduino` (`[env]` lib_deps), not the core's BLE
+library: the core 3.x bundle ships a NimBLE host with extended advertising
+compiled out and no Bluedroid, so BT5 Long Range would not link. The
+`CONFIG_BT_NIMBLE_EXT_ADV` / `MYNEWT_VAL_BLE_MULTI_ADV_INSTANCES` build flags
+switch the ext-advertising code and the two advertising instances on. Both
+transports run as extended-advertising instances (BT4 as a legacy PDU): the BT
+spec forbids mixing the legacy and extended advertising enable commands, and
+instance data is updated while running via the raw `ble_gap_ext_adv_set_data`
+(`setInstanceData` re-configures, which the host rejects with `BLE_HS_EBUSY`
+while advertising).
 
 ## Build & test commands
 
@@ -162,15 +181,16 @@ ODID (no maintained implementation exists).
 | Route | Response |
 | --- | --- |
 | `GET /` | gzipped `DASH` blob, `text/html` |
-| `GET /api/config` | `{wifi:{ssid,password},dri:{ua_id,ua_desc,op_id}}` |
+| `GET /api/config` | `{wifi:{ssid,password},dri:{ua_id,ua_desc,op_id,bt5_enabled}}` |
 | `POST /api/config` | 200 + reboot (identity is read once at boot); 400 with no body |
 | `GET /debug/info` | `{version,git_ref,build_time}` (nulls in dev builds) |
 | `WS /ws` | `{type:"status",telemetry,gnss}` once per second |
 
 NVS keys (namespace `drift`): `wifi_ssid` (defaults to `DRIFT_xxxx` from the
 eFuse MAC, also used as the BLE device name), `wifi_password` (empty ⇒ open AP),
-`dri_ua_id` (≤20), `dri_ua_desc` (≤23), `dri_op_id` (≤20). Over-length DRI
-values are silently ignored by `dri_populate_identity()`.
+`dri_ua_id` (≤20), `dri_ua_desc` (≤23), `dri_op_id` (≤20), `bt5_enabled`
+(`"1"`/`"0"`, default on; a missing/null/non-boolean POST field keeps it on).
+Over-length DRI values are silently ignored by `dri_populate_identity()`.
 
 ## CI
 
@@ -206,8 +226,9 @@ publishes `site/` to Pages. PRs touching only `site/**` skip the build workflow.
 - **The e2e flash image must stay padded to 16 MB.** The `esp32c3` machine picks
   the emulated flash chip from the image size; only the 16 MB (ISSI) model
   emulates the Quad-Enable bit, otherwise `esp_flash_init` aborts.
-- **`ble_send()`'s `DRIFT_NO_BLE` body must stay empty and in its own TU.** The
-  gdb harness reads `$a0`/`$a1` at function entry to capture broadcasts.
+- **`ble_send()`'s and `ble_send_pack()`'s `DRIFT_NO_BLE` bodies must stay empty
+  and in their own TU.** The gdb harness reads `$a0`/`$a1` (`$a2` for the pack
+  length) at function entry to capture broadcasts.
 - **The reference-aircraft constants are duplicated** in
   `test/tools/gen_odid_fixtures.cpp`, `test/test_dri/test_dri.cpp` and
   `test/fixtures/api/config.json`. Changing one requires changing the others.

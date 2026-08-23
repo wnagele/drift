@@ -26,6 +26,11 @@ def cycle_of(sends):
     return None
 
 
+def two_packs(records):
+    """True once two message packs have been captured."""
+    return len(records) >= 2
+
+
 @scenario("broadcast: the full 25-slot ODID schedule goes out over BLE")
 def broadcast(t):
     # Arm the aircraft with good telemetry, matching the reference aircraft
@@ -76,3 +81,28 @@ def broadcast(t):
     t.check_eq("every location slot matches the reference encoding",
                [record[1] for record in cycle[4:CYCLE_LENGTH]],
                [odid_fixture("location")] * (CYCLE_LENGTH - 4))
+
+
+@scenario("broadcast: the BLE5 message pack carries every valid message")
+def broadcast_pack(t):
+    # The pack path runs alongside the slot schedule (~1 Hz instead of one
+    # slot per 40 ms). With the reference aircraft fully configured and the
+    # telemetry and take-off origin from the earlier scenarios, the pack is
+    # the five reference messages behind the 3-byte pack header - byte-exact
+    # against the same fixtures the BT4 slots are compared to, in the
+    # vendored builder's order (Basic ID, Location, Self-ID, System,
+    # Operator ID).
+    packs = t.ble_pack_sends(two_packs)
+
+    expected = (bytes([0xF2, 25, 5])
+                + odid_fixture("basic_id") + odid_fixture("location")
+                + odid_fixture("self_id") + odid_fixture("system")
+                + odid_fixture("operator_id"))
+    for i, (counter, pack, length, _) in enumerate(packs[:2]):
+        t.check_eq("pack %d content" % i, (pack, length), (expected, len(expected)))
+    t.check_eq("pack counters increment",
+               packs[1][0], (packs[0][0] + 1) % 256)
+
+    # Cadence: one pack per DRI_PACK_INTERVAL (1 s).
+    delta = packs[1][3] - packs[0][3]
+    t.check_eq("pack interval is ~1 s", 950 <= delta <= 1200, True)

@@ -173,6 +173,20 @@ class Session:
                     int(gdb.parse_and_eval("millis()")))
         return self.collect_calls("ble_send", read, until)
 
+    def ble_pack_sends(self, until):
+        """Record every ble_send_pack() call as (msg_counter, pack bytes,
+        pack length, millis()), same a0/a1 mechanism as ble_sends() with the
+        length from a2."""
+        def read():
+            counter = int(gdb.parse_and_eval("$a0")) & 0xFF
+            pack = int(gdb.parse_and_eval("$a1"))
+            length = int(gdb.parse_and_eval("$a2"))
+            return (counter,
+                    bytes(gdb.selected_inferior().read_memory(pack, length)),
+                    length,
+                    int(gdb.parse_and_eval("millis()")))
+        return self.collect_calls("ble_send_pack", read, until)
+
     def _connect_serial(self):
         deadline = time.time() + 30
         while time.time() < deadline:

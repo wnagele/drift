@@ -59,6 +59,21 @@ describe('Config', () => {
     expect(posted).toEqual(fixture);
   });
 
+  test('loads and submits the BT5 Long Range transport state', async () => {
+    const { container } = render(<Config />);
+    // The shared fixture has the transport on.
+    const toggle = await screen.findByRole('switch');
+    expect(toggle).toBeChecked();
+    fireEvent.submit(container.querySelector('form'));
+    await waitFor(() => expect(posted).not.toBeNull());
+    expect(posted.dri.bt5_enabled).toEqual(true);
+
+    // Toggling it off is part of the posted wire format.
+    fireEvent.click(toggle);
+    fireEvent.submit(container.querySelector('form'));
+    await waitFor(() => expect(posted.dri.bt5_enabled).toEqual(false));
+  });
+
   test('posts changed values', async () => {
     const { container } = render(<Config />);
     await screen.findByDisplayValue(fixture.wifi.ssid);

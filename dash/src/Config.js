@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Form, Input, Button, message } from 'antd';
+import { Form, Input, Switch, Button, message } from 'antd';
 import axios from 'axios';
 
 const API_ENDPOINT = '/api/config';
@@ -18,7 +18,8 @@ const Config = () => {
           "wifi_password": data["wifi"]["password"],
           "dri_ua_id":  data["dri"]["ua_id"],
           "dri_ua_desc":  data["dri"]["ua_desc"],
-          "dri_op_id":  data["dri"]["op_id"]
+          "dri_op_id":  data["dri"]["op_id"],
+          "dri_bt5_enabled": data["dri"]["bt5_enabled"] ?? true
         });
       } catch (error) {
         message.error("Could not get current values.");
@@ -40,7 +41,8 @@ const Config = () => {
         "dri": {
           "ua_id": data["dri_ua_id"],
           "ua_desc": data["dri_ua_desc"],
-          "op_id": data["dri_op_id"]
+          "op_id": data["dri_op_id"],
+          "bt5_enabled": data["dri_bt5_enabled"] ?? true
         }
       });
       message.success("Config saved.");
@@ -105,6 +107,14 @@ const Config = () => {
         ]}
       >
         <Input maxLength="20" showCount="true" />
+      </Form.Item>
+
+      <Form.Item
+        label="Bluetooth 5 Long Range"
+        name="dri_bt5_enabled"
+        valuePropName="checked"
+      >
+        <Switch />
       </Form.Item>
 
       <Form.Item>
