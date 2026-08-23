@@ -43,14 +43,18 @@ void test_init_creates_defaults() {
     TEST_ASSERT_EQUAL_STRING("", config_dri_op_id().c_str());
     // The BLE5 transport defaults to on.
     TEST_ASSERT_TRUE(config_bt5_enabled());
+    // The Wi-Fi Beacon transport defaults to on.
+    TEST_ASSERT_TRUE(config_wifi_beacon_enabled());
 }
 
 void test_init_preserves_existing_values() {
     kv["wifi_ssid"] = "KEEPME";
     kv["bt5_enabled"] = "0";
+    kv["wifi_beacon"] = "0";
     config_init(&mem_storage, "DRIFT_ABCD");
     TEST_ASSERT_EQUAL_STRING("KEEPME", config_wifi_ssid().c_str());
     TEST_ASSERT_FALSE(config_bt5_enabled());
+    TEST_ASSERT_FALSE(config_wifi_beacon_enabled());
 }
 
 // --- BLE5 transport enable --------------------------------------------------
@@ -87,6 +91,42 @@ void test_bt5_missing_or_absent_field_keeps_default() {
 
     config_save(String("{\"dri\":{\"bt5_enabled\":\"yes\"}}"));
     TEST_ASSERT_TRUE(config_bt5_enabled());
+}
+
+// --- Wi-Fi Beacon transport enable -------------------------------------------
+
+void test_wifi_beacon_save_disables_and_roundtrips() {
+    config_init(&mem_storage, "DRIFT_ABCD");
+    config_save(String("{\"dri\":{\"wifi_beacon_enabled\":false}}"));
+    TEST_ASSERT_FALSE(config_wifi_beacon_enabled());
+
+    // config_get() emits the stored state as a JSON boolean.
+    JsonDocument got;
+    TEST_ASSERT_FALSE(deserializeJson(got, config_get()));
+    TEST_ASSERT_FALSE(got["dri"]["wifi_beacon_enabled"].as<bool>());
+}
+
+void test_wifi_beacon_save_reenables() {
+    config_init(&mem_storage, "DRIFT_ABCD");
+    config_save(String("{\"dri\":{\"wifi_beacon_enabled\":false}}"));
+    config_save(String("{\"dri\":{\"wifi_beacon_enabled\":true}}"));
+    TEST_ASSERT_TRUE(config_wifi_beacon_enabled());
+}
+
+void test_wifi_beacon_missing_or_absent_field_keeps_default() {
+    // Same rule as BT5: absent/null/non-boolean must not silently disable
+    // the broadcast.
+    config_init(&mem_storage, "DRIFT_ABCD");
+    config_save(String("{\"dri\":{\"wifi_beacon_enabled\":false}}"));
+
+    config_save(String("{\"wifi\":{\"ssid\":\"X\"}}"));
+    TEST_ASSERT_TRUE(config_wifi_beacon_enabled());
+
+    config_save(String("{\"dri\":{\"wifi_beacon_enabled\":null}}"));
+    TEST_ASSERT_TRUE(config_wifi_beacon_enabled());
+
+    config_save(String("{\"dri\":{\"wifi_beacon_enabled\":\"yes\"}}"));
+    TEST_ASSERT_TRUE(config_wifi_beacon_enabled());
 }
 
 void test_save_get_roundtrip_matches_shared_fixture() {
@@ -193,6 +233,9 @@ int main(int, char **) {
     RUN_TEST(test_bt5_save_disables_and_roundtrips);
     RUN_TEST(test_bt5_save_reenables);
     RUN_TEST(test_bt5_missing_or_absent_field_keeps_default);
+    RUN_TEST(test_wifi_beacon_save_disables_and_roundtrips);
+    RUN_TEST(test_wifi_beacon_save_reenables);
+    RUN_TEST(test_wifi_beacon_missing_or_absent_field_keeps_default);
     RUN_TEST(test_save_get_roundtrip_matches_shared_fixture);
     RUN_TEST(test_malformed_json_keeps_existing_values);
     RUN_TEST(test_missing_sections_currently_store_null);

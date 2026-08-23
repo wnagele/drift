@@ -19,7 +19,8 @@ const Config = () => {
           "dri_ua_id":  data["dri"]["ua_id"],
           "dri_ua_desc":  data["dri"]["ua_desc"],
           "dri_op_id":  data["dri"]["op_id"],
-          "dri_bt5_enabled": data["dri"]["bt5_enabled"] ?? true
+          "dri_bt5_enabled": data["dri"]["bt5_enabled"] ?? true,
+          "dri_wifi_beacon_enabled": data["dri"]["wifi_beacon_enabled"] ?? true
         });
       } catch (error) {
         message.error("Could not get current values.");
@@ -42,7 +43,8 @@ const Config = () => {
           "ua_id": data["dri_ua_id"],
           "ua_desc": data["dri_ua_desc"],
           "op_id": data["dri_op_id"],
-          "bt5_enabled": data["dri_bt5_enabled"] ?? true
+          "bt5_enabled": data["dri_bt5_enabled"] ?? true,
+          "wifi_beacon_enabled": data["dri_wifi_beacon_enabled"] ?? true
         }
       });
       message.success("Config saved.");
@@ -112,6 +114,14 @@ const Config = () => {
       <Form.Item
         label="Bluetooth 5 Long Range"
         name="dri_bt5_enabled"
+        valuePropName="checked"
+      >
+        <Switch />
+      </Form.Item>
+
+      <Form.Item
+        label="Wi-Fi Beacon"
+        name="dri_wifi_beacon_enabled"
         valuePropName="checked"
       >
         <Switch />

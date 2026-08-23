@@ -17,6 +17,12 @@
 // maximum of nine 25-byte messages.
 #define DRI_PACK_MAX_SIZE (3 + ODID_PACK_MAX_MESSAGES * ODID_MESSAGE_SIZE)
 
+// The Wi-Fi Beacon transport refreshes the same Message Pack payload in a
+// vendor IE on the SoftAP's beacons and probe responses. ~5 Hz keeps the
+// Location data a receiver can observe well inside the 1 s freshness rule;
+// the SoftAP's own ~100 TU beacon interval repeats the IE between refreshes.
+#define DRI_WIFI_BEACON_INTERVAL 200  // ms between Wi-Fi Beacon IE refreshes
+
 #define DRI_UUID 0xFFFA         // ASTM
 #define DRI_APP_CODE 0x0D       // RD
 
@@ -44,6 +50,7 @@ size_t dri_build_pack_service_data(uint8_t msg_counter, const uint8_t *pack, siz
 void dri_populate_identity(ODID_UAS_Data *data, const char *ua_id, const char *op_id, const char *ua_desc);
 
 bool dri_pack_due(unsigned long last_due, unsigned long now);
+bool dri_wifi_beacon_due(unsigned long last_due, unsigned long now);
 void dri_init(ODID_UAS_Data *data, unsigned long now);
 void dri_transmit(ODID_UAS_Data *data, unsigned long now);
 void dri_update_status(ODID_UAS_Data *data, ODID_status_t status);

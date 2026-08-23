@@ -7,6 +7,7 @@
     "ua_id": "1DRIFT000TEST00001",
     "ua_desc": "DRIFT test fixture",
     "op_id": "TEST-OPERATOR-1",
-    "bt5_enabled": true
+    "bt5_enabled": true,
+    "wifi_beacon_enabled": true
   }
 }

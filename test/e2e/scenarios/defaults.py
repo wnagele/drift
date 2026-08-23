@@ -48,6 +48,9 @@ def defaults(t):
     # this pins the write through the real NVS backend).
     t.check_eq("bt5_enabled defaults to on", t.eval("config_bt5_enabled()"), 1)
 
+    # The Wi-Fi Beacon transport defaults to on, same pinning.
+    t.check_eq("wifi_beacon_enabled defaults to on", t.eval("config_wifi_beacon_enabled()"), 1)
+
     # And empty is what the identity population saw at boot: no ID slots
     # configured.
     t.check_eq("no Basic ID on a factory boot",

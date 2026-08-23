@@ -39,6 +39,9 @@ def main():
         ["dri_op_id", "data", "string", config["dri"]["op_id"]],
         # Booleans ride the string-only storage seam as "1"/"0" (config.cpp).
         ["bt5_enabled", "data", "string", "1" if config["dri"]["bt5_enabled"] else "0"],
+        # NVS keys are capped at 15 characters, so the stored key is the
+        # short form of the API field (config.cpp).
+        ["wifi_beacon", "data", "string", "1" if config["dri"]["wifi_beacon_enabled"] else "0"],
     ]
     csv_path = out_bin + ".csv"
     with open(csv_path, "w", newline="") as f:

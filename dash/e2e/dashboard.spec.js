@@ -77,6 +77,7 @@ test('config save flow posts the edited config to the API', async ({ page }) => 
   expect(postBody.dri.op_id).toEqual('E2E-OPERATOR');
   expect(postBody.wifi.ssid).toEqual(configFixture.wifi.ssid);
   expect(postBody.dri.bt5_enabled).toEqual(configFixture.dri.bt5_enabled);
+  expect(postBody.dri.wifi_beacon_enabled).toEqual(configFixture.dri.wifi_beacon_enabled);
 });
 
 test('config save flow posts the BT5 transport state', async ({ page }) => {
@@ -108,4 +109,35 @@ test('config save flow posts the BT5 transport state', async ({ page }) => {
   await expect(page.getByText('Config saved.')).toBeVisible();
   expect(postBody).not.toBeNull();
   expect(postBody.dri.bt5_enabled).toEqual(!configFixture.dri.bt5_enabled);
+});
+
+test('config save flow posts the Wi-Fi Beacon transport state', async ({ page }) => {
+  await page.goto('/');
+
+  await page.getByRole('menuitem', { name: /config/i }).click();
+  const toggle = page.getByRole('switch', { name: /wi-fi beacon/i });
+  await expect(toggle).toBeVisible();
+  if (configFixture.dri.wifi_beacon_enabled)
+    await expect(toggle).toBeChecked();
+  else
+    await expect(toggle).not.toBeChecked();
+
+  let postBody = null;
+  await page.route('**/api/config', (route) => {
+    if (route.request().method() === 'POST') {
+      try {
+        postBody = route.request().postDataJSON();
+      } catch {
+        // empty body
+      }
+    }
+    return route.fulfill({ status: 200 });
+  });
+
+  await toggle.click();
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  await expect(page.getByText('Config saved.')).toBeVisible();
+  expect(postBody).not.toBeNull();
+  expect(postBody.dri.wifi_beacon_enabled).toEqual(!configFixture.dri.wifi_beacon_enabled);
 });

@@ -62,7 +62,7 @@ describe('Config', () => {
   test('loads and submits the BT5 Long Range transport state', async () => {
     const { container } = render(<Config />);
     // The shared fixture has the transport on.
-    const toggle = await screen.findByRole('switch');
+    const toggle = await screen.findByRole('switch', { name: /bluetooth 5 long range/i });
     expect(toggle).toBeChecked();
     fireEvent.submit(container.querySelector('form'));
     await waitFor(() => expect(posted).not.toBeNull());
@@ -72,6 +72,21 @@ describe('Config', () => {
     fireEvent.click(toggle);
     fireEvent.submit(container.querySelector('form'));
     await waitFor(() => expect(posted.dri.bt5_enabled).toEqual(false));
+  });
+
+  test('loads and submits the Wi-Fi Beacon transport state', async () => {
+    const { container } = render(<Config />);
+    // The shared fixture has the transport on.
+    const toggle = await screen.findByRole('switch', { name: /wi-fi beacon/i });
+    expect(toggle).toBeChecked();
+    fireEvent.submit(container.querySelector('form'));
+    await waitFor(() => expect(posted).not.toBeNull());
+    expect(posted.dri.wifi_beacon_enabled).toEqual(true);
+
+    // Toggling it off is part of the posted wire format.
+    fireEvent.click(toggle);
+    fireEvent.submit(container.querySelector('form'));
+    await waitFor(() => expect(posted.dri.wifi_beacon_enabled).toEqual(false));
   });
 
   test('posts changed values', async () => {

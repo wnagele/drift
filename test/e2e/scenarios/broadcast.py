@@ -31,6 +31,11 @@ def two_packs(records):
     return len(records) >= 2
 
 
+def two_wifi_beacons(records):
+    """True once two Wi-Fi beacon refreshes have been captured."""
+    return len(records) >= 2
+
+
 @scenario("broadcast: the full 25-slot ODID schedule goes out over BLE")
 def broadcast(t):
     # Arm the aircraft with good telemetry, matching the reference aircraft
@@ -106,3 +111,27 @@ def broadcast_pack(t):
     # Cadence: one pack per DRI_PACK_INTERVAL (1 s).
     delta = packs[1][3] - packs[0][3]
     t.check_eq("pack interval is ~1 s", 950 <= delta <= 1200, True)
+
+
+@scenario("broadcast: the Wi-Fi Beacon IE carries every valid message")
+def broadcast_wifi_beacon(t):
+    # The Wi-Fi Beacon transport refreshes the same message pack as the BT5
+    # path, but on its own ~5 Hz cadence (DRI_WIFI_BEACON_INTERVAL, the 5 Hz rate
+    # rule the plan pins for Wi-Fi broadcasts). The pack content is the same
+    # five reference messages byte-for-byte; only the schedule and the
+    # counter differ - the IE framing itself is pinned natively against the
+    # vendored beacon frame builder (test_dri).
+    wifi_beacons = t.wifi_beacon_sends(two_wifi_beacons)
+
+    expected = (bytes([0xF2, 25, 5])
+                + odid_fixture("basic_id") + odid_fixture("location")
+                + odid_fixture("self_id") + odid_fixture("system")
+                + odid_fixture("operator_id"))
+    for i, (counter, pack, length, _) in enumerate(wifi_beacons[:2]):
+        t.check_eq("wifi beacon %d content" % i, (pack, length), (expected, len(expected)))
+    t.check_eq("wifi beacon counters increment",
+               wifi_beacons[1][0], (wifi_beacons[0][0] + 1) % 256)
+
+    # Cadence: one IE refresh per DRI_WIFI_BEACON_INTERVAL (200 ms).
+    delta = wifi_beacons[1][3] - wifi_beacons[0][3]
+    t.check_eq("wifi beacon interval is ~200 ms", 150 <= delta <= 350, True)

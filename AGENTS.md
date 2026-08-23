@@ -4,10 +4,11 @@
 
 DRIFT is an ESP32-C3 firmware (PlatformIO, Arduino framework) that reads
 MAVLink v1 telemetry from a flight controller and broadcasts Drone Remote ID
-(DRI / ASTM F3411) over BLE 4 legacy advertising. A React dashboard is served
-gzipped from the device's Wi-Fi SoftAP for config and status.
+(DRI / ASTM F3411) over BLE 4 legacy advertising, BLE 5 Long Range and a
+Wi-Fi Beacon vendor IE. A React dashboard is served gzipped from the device's
+Wi-Fi SoftAP for config and status.
 
-- `src/` — firmware (~1k lines of hand-written C++ across 13 modules).
+- `src/` — firmware (~1k lines of hand-written C++ across 15 modules).
   Hardware/platform code is confined to `#ifdef` blocks at the bottom of a file
   or to a whole-file no-op twin, so every module also compiles on the host
   (`native` test env). Pure decisions are extracted into testable seams.
@@ -38,20 +39,29 @@ UART (Serial0 on device, Serial1 in e2e) 9600 baud
                              21 location per second), vendored encoders
                              BT5: 1 s guard (dri_pack_due), one Message Pack
                              (odid_message_build_pack) of every valid message
+                             Wi-Fi Beacon: 200 ms guard (dri_wifi_beacon_due), the
+                             same Message Pack refreshed in the SoftAP vendor IE
   -> ble_frame.cpp           [0]=0x0D app code, [1]=msg counter, payload; the
                              raw AD structures ([len][0x16][FA FF][...]) for
                              both transports
   -> ble.cpp ble_send()      BT4: legacy PDU, service data under UUID 0xFFFA,
                              20 ms adv interval
      ble.cpp ble_send_pack() BT5 Long Range: Coded PHY S=8, ~1 Hz
+     wifi_frame.cpp          the vendor IE ([0xDD][len][FA 0B BC][0x0D][counter]
+                             [pack]) pinned byte-exact against the vendored
+                             beacon frame builder
+     wifi_beacon.cpp         esp_wifi_set_vendor_ie() on the SoftAP's beacons
+                             AND probe responses (clear-then-set per refresh),
+                             ~5 Hz
 ```
 
 A parallel path feeds the dashboard: `status.cpp` counters latched into booleans
 by a 3 s TaskScheduler task, pushed as JSON over `/ws` by a 1 s task.
 
 Module map: `main.cpp` (wiring, the only MAVLink→ODID mapping),
-`betaflight_mavlink` (ingest), `dri` (ODID + both broadcast schedules),
-`ble_frame`/`ble` (on-air frames + radio), `config`/`config_storage`/
+`betaflight_mavlink` (ingest), `dri` (ODID + all three broadcast schedules),
+`ble_frame`/`ble` (on-air frames + radio), `wifi_frame`/`wifi_beacon`
+(vendor IE bytes + SoftAP registration), `config`/`config_storage`/
 `config_storage_esp` (JSON ⇄ NVS), `http_api` (transport-free routing table),
 `net` (Wi-Fi, async HTTP, WebSocket, OTA), `wifi_ap` (open-vs-WPA decision),
 `status`, `debug` (build provenance), `utils` (default SSID from eFuse MAC).
@@ -62,7 +72,8 @@ Testability seams — keep these intact when refactoring:
   production backend is `config_storage_esp()` (Preferences, namespace `drift`),
   tests inject an in-memory map. Booleans ride the string seam as `"1"`/`"0"`.
 - Time is a parameter, never `millis()` inside a module: `dri_init(data, now)`,
-  `dri_transmit(data, now)`, `dri_due(last, now)`, `dri_pack_due(last, now)`.
+  `dri_transmit(data, now)`, `dri_due(last, now)`, `dri_pack_due(last, now)`,
+  `dri_wifi_beacon_due(last, now)`.
 - `http_api_init(dash, dash_len)` injects the dash blob, because the native
   build does not link the generated `dash.cpp`.
 - Value structs instead of I/O: `HttpApiResponse`, `WifiApParams`, `BleAdvFrame`.
@@ -71,6 +82,11 @@ Testability seams — keep these intact when refactoring:
   `ble_send_counters[]`, `ble_send_messages[]`, `ble_pack_send_count`,
   `ble_pack_send_counters[]`, `ble_pack_send_lens[]`,
   `ble_pack_send_bytes[][]`, `ble_send_reset()` clears both records).
+- `src/wifi_beacon.cpp` has the same three-body split (gated on
+  `DRIFT_NO_NET` instead of `DRIFT_NO_BLE`): `esp_wifi_set_vendor_ie` on the
+  device, an empty e2e stub, and a native recorder (`wifi_beacon_send_count`,
+  `wifi_beacon_send_counters[]`, `wifi_beacon_send_lens[]`,
+  `wifi_beacon_send_bytes[][]`, `wifi_beacon_send_reset()`).
 
 ## Build environments and flags
 
@@ -181,7 +197,7 @@ ODID (no maintained implementation exists).
 | Route | Response |
 | --- | --- |
 | `GET /` | gzipped `DASH` blob, `text/html` |
-| `GET /api/config` | `{wifi:{ssid,password},dri:{ua_id,ua_desc,op_id,bt5_enabled}}` |
+| `GET /api/config` | `{wifi:{ssid,password},dri:{ua_id,ua_desc,op_id,bt5_enabled,wifi_beacon_enabled}}` |
 | `POST /api/config` | 200 + reboot (identity is read once at boot); 400 with no body |
 | `GET /debug/info` | `{version,git_ref,build_time}` (nulls in dev builds) |
 | `WS /ws` | `{type:"status",telemetry,gnss}` once per second |
@@ -189,8 +205,10 @@ ODID (no maintained implementation exists).
 NVS keys (namespace `drift`): `wifi_ssid` (defaults to `DRIFT_xxxx` from the
 eFuse MAC, also used as the BLE device name), `wifi_password` (empty ⇒ open AP),
 `dri_ua_id` (≤20), `dri_ua_desc` (≤23), `dri_op_id` (≤20), `bt5_enabled`
-(`"1"`/`"0"`, default on; a missing/null/non-boolean POST field keeps it on).
-Over-length DRI values are silently ignored by `dri_populate_identity()`.
+(`"1"`/`"0"`, default on; a missing/null/non-boolean POST field keeps it on),
+`wifi_beacon` (same encoding, default on, same missing-field rule; the API
+field is `wifi_beacon_enabled`). Over-length DRI values are silently ignored
+by `dri_populate_identity()`.
 
 ## CI
 
@@ -206,7 +224,8 @@ publishes `site/` to Pages. PRs touching only `site/**` skip the build workflow.
   namespace (`dri_*`, `config_*`, ...); `PascalCase` structs; Arduino `String`
   at text-producing boundaries and `const char *` for literals and C APIs.
   Module state is `static` at file scope; the only intentionally external
-  globals are the `status` flags and the native `ble_send_*` recorder.
+  globals are the `status` flags and the native `ble_send_*` /
+  `wifi_beacon_send_*` recorders.
 - Keep `#ifdef` blocks whole-function or whole-file, never mid-function, and
   prefer extracting the pure decision over adding a guard.
 - Comments explain *why* — the existing ones document real constraints
@@ -228,7 +247,19 @@ publishes `site/` to Pages. PRs touching only `site/**` skip the build workflow.
   emulates the Quad-Enable bit, otherwise `esp_flash_init` aborts.
 - **`ble_send()`'s and `ble_send_pack()`'s `DRIFT_NO_BLE` bodies must stay empty
   and in their own TU.** The gdb harness reads `$a0`/`$a1` (`$a2` for the pack
-  length) at function entry to capture broadcasts.
+  length) at function entry to capture broadcasts. Same for
+  `wifi_beacon_send_pack()`'s `DRIFT_NO_NET` body.
+- **The vendor IE refresh must stay a clear-then-set.** `esp_wifi_set_vendor_ie`
+  rejects enabling an IE at an index that is already enabled
+  (`ESP_ERR_INVALID_ARG`), so every ~5 Hz refresh clears the BEACON and
+  PROBE_RESP IEs before re-registering them; and the `vendor_ie_data_t` payload
+  must follow the 6-byte header inline in one buffer (flexible-array struct —
+  the pitfall behind ArduRemoteID issue #155), which is why
+  `wifi_frame_build_vendor_ie()` emits exactly those bytes.
+- **NVS keys are capped at 15 characters** (Preferences, `nvs_partition_gen`),
+  so the Wi-Fi Beacon enable is stored as `wifi_beacon` while its API field is
+  `wifi_beacon_enabled`. Keep new keys short; the e2e seed writes the same
+  strings (test/e2e/nvs_seed.py).
 - **The reference-aircraft constants are duplicated** in
   `test/tools/gen_odid_fixtures.cpp`, `test/test_dri/test_dri.cpp` and
   `test/fixtures/api/config.json`. Changing one requires changing the others.

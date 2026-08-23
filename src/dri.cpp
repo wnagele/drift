@@ -1,6 +1,7 @@
 #include <string.h>
 #include "ble.h"
 #include "dri.h"
+#include "wifi_beacon.h"
 
 static ODID_Message_encoded encoded;
 static uint8_t msg_counter = 0;
@@ -11,12 +12,20 @@ static uint8_t pack[DRI_PACK_MAX_SIZE];
 static uint8_t pack_counter = 0;
 static unsigned long last_pack = 0;
 
+static uint8_t wifi_beacon_pack[DRI_PACK_MAX_SIZE];
+static uint8_t wifi_beacon_counter = 0;
+static unsigned long last_wifi_beacon = 0;
+
 bool dri_due(unsigned long last_due, unsigned long now) {
     return now - last_due > DRI_INTERVAL * DRI_GUARD_MULTIPLIER;
 }
 
 bool dri_pack_due(unsigned long last_due, unsigned long now) {
     return now - last_due > DRI_PACK_INTERVAL;
+}
+
+bool dri_wifi_beacon_due(unsigned long last_due, unsigned long now) {
+    return now - last_due > DRI_WIFI_BEACON_INTERVAL;
 }
 
 uint8_t dri_counter_next(uint8_t schedule) {
@@ -134,9 +143,20 @@ void dri_init(ODID_UAS_Data *data, unsigned long now) {
     last = now;
     pack_counter = 0;
     last_pack = now;
+    wifi_beacon_counter = 0;
+    last_wifi_beacon = now;
 }
 
 void dri_transmit(ODID_UAS_Data *data, unsigned long now) {
+    if (dri_wifi_beacon_due(last_wifi_beacon, now)) {
+        last_wifi_beacon = now;
+        int pack_len = dri_build_pack(data, wifi_beacon_pack, sizeof(wifi_beacon_pack));
+        // An empty pack (nothing valid) is rejected by the builder: skip the
+        // refresh rather than register an empty IE.
+        if (pack_len > 0)
+            wifi_beacon_send_pack(wifi_beacon_counter++, wifi_beacon_pack, pack_len);
+    }
+
     if (dri_pack_due(last_pack, now)) {
         last_pack = now;
         int pack_len = dri_build_pack(data, pack, sizeof(pack));
