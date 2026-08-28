@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Layout, Menu, message } from 'antd';
 import { InfoCircleOutlined, EditOutlined } from '@ant-design/icons';
 import Status from './Status';
+import ConnectionBox from './ConnectionBox';
+import useStatusSocket from './useStatusSocket';
 import Config from './Config';
 import axios from 'axios';
 
@@ -25,6 +27,10 @@ const items = [
 const App = () => {
   const [selectedKey, setSelectedKey] = useState("status");
   const [buildInfo, setBuildInfo] = useState("LOADING");
+  const [collapsed, setCollapsed] = useState(false);
+  // One /ws connection for the whole app: the sidebar connection box is
+  // visible from every tab, and the Status view shows its details.
+  const status = useStatusSocket();
 
   useEffect(() => {
     const getBuildInfo = async () => {
@@ -49,7 +55,7 @@ const App = () => {
   const renderContent = () => {
     switch (selectedKey) {
       case "status":
-        return <Status />;
+        return <Status telemetryState={status.telemetryState} gnssState={status.gnssState} />;
       case "config":
         return <Config />;
       default:
@@ -59,7 +65,7 @@ const App = () => {
 
   return (
     <Layout>
-      <Sider breakpoint="md">
+      <Sider breakpoint="md" onCollapse={setCollapsed}>
         <div style={{
             display: "flex",
             alignItems: "center",
@@ -72,6 +78,13 @@ const App = () => {
           }}>
           DRIFT
         </div>
+        <ConnectionBox
+          collapsed={collapsed}
+          connection={status.connection}
+          stale={status.stale}
+          msgAgeMs={status.msgAgeMs}
+          closedAgeMs={status.closedAgeMs}
+        />
         <Menu theme="dark"
               items={items}
               defaultSelectedKeys={ [ "status" ] }

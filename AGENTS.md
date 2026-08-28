@@ -64,7 +64,13 @@ UART (Serial0 on device, Serial1 in e2e) 9600 baud
 ```
 
 A parallel path feeds the dashboard: `status.cpp` counters latched into booleans
-by a 3 s TaskScheduler task, pushed as JSON over `/ws` by a 1 s task.
+by a 3 s TaskScheduler task, pushed as JSON over `/ws` by a 1 s task. The dash
+derives its own health from that cadence: App owns one `/ws` connection
+(`useStatusSocket`), the sidebar carries a connection box (green Connected /
+orange Connecting or No data / red Disconnected, with the last update age;
+collapses to a dot on narrow screens), and the Status view carries the
+telemetry/GNSS flags — an open-but-silent socket (no status message for 5 s) is
+flagged "No data" so a wedged link shows up instead of freezing the flags.
 
 Module map: `main.cpp` (wiring, the only MAVLink→ODID mapping),
 `betaflight_mavlink` (ingest), `dri` (ODID + all four broadcast schedules),
@@ -144,6 +150,12 @@ while advertising).
 - Dash unit tests: `cd dash && npm ci && npm test`
 - Dash E2E: `cd dash && npm run test:e2e` (needs `npx playwright install chromium`)
 - Dash bundle: `cd dash && ./build.sh` (npm install + webpack + wrap)
+- Dash local preview: `cd dash && npm run dev` — mock device on
+  `http://127.0.0.1:8321` (shared fixtures for the API, 1 Hz `/ws` status
+  stream). `WS_MODE` picks the connection-box scenario: `connected`
+  (default), `no-data` (socket opens, nothing arrives), `disconnected`
+  (dropped right away), `flaky` (random delays that sometimes breach the
+  5 s staleness threshold, flipping the box between Connected and No data)
 
 ## Generated files (do not hand-edit)
 
@@ -200,9 +212,12 @@ TCP chardev; UART0 is captured to a log file.
 Vitest + jsdom + Testing Library, msw for HTTP, hand-rolled `MockWebSocket`
 classes for `/ws`. `vitest.config.js` forces esbuild's `jsx` loader for `src/**`
 because JSX lives in `.js` files. Playwright (`chromium` only, serial) serves the
-built bundle from `e2e/page-server.js` on `127.0.0.1:8321`; that server only
-answers `GET /`, so all API and WebSocket traffic must be stubbed with
-`page.route`/`page.routeWebSocket`.
+built bundle from `e2e/page-server.js` on `127.0.0.1:8321`; the tests stub all
+API and WebSocket traffic with `page.route`/`page.routeWebSocket`, which
+intercept before the network. The server itself also answers those endpoints
+with the shared fixtures — `npm run dev` serves a full mock device for local
+visual checks (`WS_MODE` picks the connection-box scenario: `connected`,
+`no-data`, `disconnected`, `flaky`).
 
 ### The shared contract
 
