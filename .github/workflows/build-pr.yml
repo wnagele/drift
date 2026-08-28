@@ -27,6 +27,7 @@ jobs:
           git diff --exit-code -- test/fixtures
 
   firmware-test:
+    needs: fixtures-fresh
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -41,6 +42,7 @@ jobs:
         run: pio test -e native
 
   firmware-e2e:
+    needs: firmware-test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -59,6 +61,7 @@ jobs:
         run: docker run --rm -v "$PWD:/work:ro" drift-e2e
 
   dash-test:
+    needs: fixtures-fresh
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -75,6 +78,7 @@ jobs:
         working-directory: dash
 
   dash-e2e:
+    needs: dash-test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -94,6 +98,7 @@ jobs:
         working-directory: dash
 
   build:
+    needs: [dash-e2e, firmware-e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
