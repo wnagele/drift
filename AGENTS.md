@@ -66,13 +66,21 @@ UART (Serial0 on device, Serial1 in e2e) 9600 baud
 ```
 
 A parallel path feeds the dashboard: `status.cpp` counters latched into booleans
-by a 3 s TaskScheduler task, pushed as JSON over `/ws` by a 1 s task. The dash
-derives its own health from that cadence: App owns one `/ws` connection
+by a 3 s TaskScheduler task, pushed as JSON over `/ws` by a 1 s task. The same
+message carries the per-transport transmit rates from `txcount.cpp` (Remote-ID-carrying
+frames the broadcast schedule handed to the radio seams over the last completed second,
+and the ODID messages they carried — a NAN window's sync beacon holds no ODID data and is
+not counted, so frames:messages is 1:N on every transport; counted in `dri.cpp` at the
+send seams, enable-gated by the config flags wired through `txcount_init()`, sampled by
+`txcount_sample(millis())` from the main loop). The dash derives its own
+health from that cadence: App owns one `/ws` connection
 (`useStatusSocket`), the sidebar carries a connection box (green Connected /
 orange Connecting or No data / red Disconnected, with the last update age;
-collapses to a dot on narrow screens), and the Status view carries the
-telemetry/GNSS flags — an open-but-silent socket (no status message for 5 s) is
-flagged "No data" so a wedged link shows up instead of freezing the flags.
+collapses to a dot on narrow screens), the Status view carries the
+telemetry/GNSS flags and the Statistics view the per-transport transmit-rate
+table — an open-but-silent socket
+(no status message for 5 s) is flagged "No data" so a wedged link shows up
+instead of freezing the flags.
 
 Module map: `main.cpp` (wiring, the only MAVLink→ODID mapping),
 `betaflight_mavlink` (ingest), `dri` (ODID + all four broadcast schedules),
@@ -82,7 +90,8 @@ Module map: `main.cpp` (wiring, the only MAVLink→ODID mapping),
 frame seam), `config`/`config_storage`/
 `config_storage_esp` (JSON ⇄ NVS), `http_api` (transport-free routing table),
 `net` (Wi-Fi, async HTTP, WebSocket, OTA), `wifi_ap` (open-vs-WPA decision),
-`status`, `debug` (build provenance), `utils` (default SSID + Wi-Fi NAN source
+`status`, `txcount` (per-transport transmit-rate counters for the dash),
+`debug` (build provenance), `utils` (default SSID + Wi-Fi NAN source
 MAC from eFuse MAC).
 
 Testability seams — keep these intact when refactoring:
@@ -239,7 +248,7 @@ ODID (no maintained implementation exists).
 | `GET /api/config` | `{wifi:{ssid,password},dri:{ua_id,ua_desc,op_id,bt5_enabled,wifi_beacon_enabled,wifi_nan_enabled}}` |
 | `POST /api/config` | 200 + reboot (identity is read once at boot); 400 with no body |
 | `GET /debug/info` | `{version,git_ref,build_time}` (nulls in dev builds) |
-| `WS /ws` | `{type:"status",telemetry,gnss}` once per second |
+| `WS /ws` | `{type:"status",telemetry,gnss,tx:{bt4,bt5,wifi_beacon,wifi_nan}}` once per second; each `tx` transport is `{frames,messages}` per second over the last completed window |
 
 NVS keys (namespace `drift`): `wifi_ssid` (defaults to `DRIFT_xxxx` from the
 eFuse MAC, also used as the BLE device name), `wifi_password` (empty ⇒ open AP),

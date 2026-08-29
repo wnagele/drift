@@ -55,6 +55,16 @@ test('connection box and status view reflect websocket status messages', async (
   await expect(gnssRow.locator('.anticon-check-circle')).toHaveCount(0);
   // GNSS being down degrades the flags, not the connection box.
   await expect(box).not.toHaveClass(/status-box-degraded/);
+
+  // The Statistics tab carries the per-transport transmit-rate table, fed by
+  // the same websocket stream (txcount.cpp diagnostics).
+  await page.getByRole('menuitem', { name: 'Statistics' }).click();
+  const rates = page.locator('.ant-table');
+  await expect(rates).toContainText('Bluetooth 4 legacy');
+  await expect(rates).toContainText('Bluetooth 5 Long Range');
+  await expect(rates).toContainText('Wi-Fi Beacon');
+  await expect(rates).toContainText('Wi-Fi NAN');
+  await expect(rates).toContainText('10');
 });
 
 test('connection box flags a silent websocket as no-data', async ({ page }) => {

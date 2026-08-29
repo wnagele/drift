@@ -6,6 +6,7 @@
 #include "dri.h"
 #include "net.h"
 #include "status.h"
+#include "txcount.h"
 #include "utils.h"
 #include "wifi_beacon.h"
 #include "wifi_nan.h"
@@ -44,6 +45,11 @@ void setup() {
     uint8_t src_mac[6];
     getBaseMac(src_mac);
     wifi_nan_init(config_wifi_nan_enabled(), src_mac);
+
+    // The transmit-rate diagnostics gate on the same config flags as the
+    // radio seams, so a disabled transport cannot report phantom activity.
+    txcount_init(config_bt5_enabled(), config_wifi_beacon_enabled(),
+                 config_wifi_nan_enabled());
 
     mavlink_init(&mavlink_state);
 
@@ -127,6 +133,7 @@ void loop() {
     }
 
     dri_transmit(&odid_state, millis());
+    txcount_sample(millis());
 
     scheduler.execute();
 }

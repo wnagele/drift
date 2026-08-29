@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Layout, Menu, message } from 'antd';
-import { InfoCircleOutlined, EditOutlined } from '@ant-design/icons';
+import { BarChartOutlined, EditOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import Status from './Status';
+import Statistics from './Statistics';
 import ConnectionBox from './ConnectionBox';
 import useStatusSocket from './useStatusSocket';
 import Config from './Config';
@@ -16,6 +17,11 @@ const items = [
     key: "status",
     label: "Status",
     icon: React.createElement(InfoCircleOutlined),
+  },
+  {
+    key: "statistics",
+    label: "Statistics",
+    icon: React.createElement(BarChartOutlined),
   },
   {
     key: "config",
@@ -56,6 +62,8 @@ const App = () => {
     switch (selectedKey) {
       case "status":
         return <Status telemetryState={status.telemetryState} gnssState={status.gnssState} />;
+      case "statistics":
+        return <Statistics txState={status.txState} />;
       case "config":
         return <Config />;
       default:

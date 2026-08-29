@@ -20,9 +20,14 @@ const TICK_MS = 1000;
 //   closedAgeMs     ms since the connection was lost, or null unless closed
 //   telemetryState  true | false | null (no status message yet)
 //   gnssState       true | false | null
+//   txState         per-transport transmit rates from the last status
+//                   message ({bt4,bt5,wifi_beacon,wifi_nan}, each
+//                   {frames,messages}), or null if absent (no message yet,
+//                   or older firmware without the tx diagnostics)
 const useStatusSocket = () => {
   const [telemetryState, setTelemetryState] = useState(null);
   const [gnssState, setGnssState] = useState(null);
+  const [txState, setTxState] = useState(null);
   const [connection, setConnection] = useState('connecting');
   const [now, setNow] = useState(Date.now());
   const lastMessageAt = useRef(null);
@@ -63,6 +68,7 @@ const useStatusSocket = () => {
           lastMessageAt.current = Date.now();
           setTelemetryState(data.telemetry);
           setGnssState(data.gnss);
+          setTxState(data.tx ?? null);
         }
       } catch (err) {
         console.error('Invalid message: ', event.data);
@@ -98,7 +104,7 @@ const useStatusSocket = () => {
     ? Math.max(0, now - closedAt.current)
     : null;
 
-  return { connection, stale, msgAgeMs, closedAgeMs, telemetryState, gnssState };
+  return { connection, stale, msgAgeMs, closedAgeMs, telemetryState, gnssState, txState };
 };
 
 export default useStatusSocket;

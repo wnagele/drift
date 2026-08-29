@@ -1,5 +1,11 @@
 {
   "type": "status",
   "telemetry": true,
-  "gnss": false
+  "gnss": false,
+  "tx": {
+    "bt4": { "frames": 10, "messages": 10 },
+    "bt5": { "frames": 1, "messages": 3 },
+    "wifi_beacon": { "frames": 5, "messages": 15 },
+    "wifi_nan": { "frames": 2, "messages": 6 }
+  }
 }
