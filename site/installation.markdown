@@ -2,6 +2,7 @@
 layout: page
 title: Installation
 permalink: /installation/
+nav_order: 1
 ---
 # Installation
 
@@ -106,7 +107,7 @@ Once finished reset your board.
 {: .important }
 Over-the-Air (OTA) updates are only available after you have installed DRIFT on a module once.
 
-To perform such an update simply connect to the WiFi AP of your module (default SSID is `DRI_<chipid>`).
+To perform such an update simply connect to the WiFi AP of your module (default SSID is `DRIFT_<chipid>`).
 Once connected open the web page at [http://drift.local/update](http://drift.local/update).
 
 Upload the firmware file ending in `-ota.bin` for your module and wait for the process to finish.
@@ -116,16 +117,50 @@ It should automatically reset and boot into the updated firmware.
 
 ## Configure
 
-1. Connect to your module via WiFi (default SSID is `DRI_<chipid>`).
+1. Connect to your module via WiFi (default SSID is `DRIFT_<chipid>`).
 2. Open a browser and go to the dashboard at [http://drift.local](http://drift.local).
-3. All options for configuring the module are found in the `Config` tab
+3. All options for configuring the module are found in the `Config` tab:
+
+| Option | Details |
+|:---|:---|
+| WiFi SSID | Network name of the module's own access point. |
+| WiFi Password | Leave empty for an open access point, otherwise WPA2 with a minimum of 8 characters. |
+| Unmanned Aircraft ID | The serial number of your aircraft (max. 20 characters). |
+| Unmanned Aircraft Description | Free text describing your aircraft, e.g. make and model (max. 23 characters). |
+| Operator ID | Your operator registration ID, where your regulator assigns one (max. 20 characters). |
+| Bluetooth 5 Long Range | Transport switch, see [Broadcasting](/broadcasting/). Default: on. |
+| Wi-Fi Beacon | Transport switch, see [Broadcasting](/broadcasting/). Default: on. |
+| Wi-Fi NAN | Transport switch, see [Broadcasting](/broadcasting/). Default: off. |
+
+{: .note }
+The default SSID is derived from the unique chip ID of your module.
+
+{: .important }
+Saving the configuration makes the module reboot itself to apply the new settings.
 
 
 
 ## Testing
 
-1. Connect to your module via WiFi (default SSID is `DRI_<chipid>`).
+1. Connect to your module via WiFi (default SSID is `DRIFT_<chipid>`).
 2. Open a browser and go to the dashboard at [http://drift.local](http://drift.local).
-3. The `Status` tab of the dashboard shows you if all necessary data is properly received.  
+3. The connection box in the sidebar shows the health of the link between dashboard and module:
+   green *Connected* with the age of the last update, orange *Connecting* / *No data*
+   (the link is up, but no updates arrive — a wedged connection is reported instead of
+   the display silently freezing), or red *Disconnected*.
+4. The `Status` tab of the dashboard shows you if all necessary data is properly received:
+   - **Telemetry** — the flight controller is sending MAVLink messages.
+   - **GNSS** — a valid position fix is available.
+
    For the GNSS status make sure your drone has a proper 3D position fix in your Flight Controller.
-4. To verify the DRI broadcasts we recommend the free *Drone Scanner* app ([Android](https://play.google.com/store/apps/details?id=cz.dronetag.dronescanner), [iOS](https://apps.apple.com/gb/app/drone-scanner/id1644548782)).
+5. The `Statistics` tab shows the Remote ID transmit rates the module itself schedules,
+   per transport as *Frames/s* and *Messages/s*. In a healthy steady state expect
+   Bluetooth 4 at ~10 frames/s, Bluetooth 5 Long Range at ~1 frame/s, Wi-Fi Beacon at
+   ~5 frames/s and Wi-Fi NAN at ~2 frames/s (only while enabled — a disabled transport stays at zero).
+   The *Messages/s* value grows as more of the broadcast content becomes available, e.g. once GNSS origin data arrives.
+6. To verify the DRI broadcasts over the air we recommend the free *Drone Scanner* app ([Android](https://play.google.com/store/apps/details?id=cz.dronetag.dronescanner), [iOS](https://apps.apple.com/gb/app/drone-scanner/id1644548782)).
+
+{: .note }
+Receiver support differs per transport, see [Broadcasting](/broadcasting/): Apple devices
+only receive Bluetooth 4. While connected to the module's WiFi your phone is on
+channel 6, so an Android scanner app can verify the Wi-Fi Beacon transport on the same phone.
