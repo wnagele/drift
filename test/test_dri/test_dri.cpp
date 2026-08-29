@@ -54,13 +54,15 @@ void setUp() {
 // --- Timing guard ---------------------------------------------------------
 
 void test_due_boundary() {
-    TEST_ASSERT_FALSE(dri_due(1000, 1000 + DRI_INTERVAL * DRI_GUARD_MULTIPLIER));
-    TEST_ASSERT_TRUE(dri_due(1000, 1000 + DRI_INTERVAL * DRI_GUARD_MULTIPLIER + 1));
+    TEST_ASSERT_FALSE(dri_due(1000, 1000 + DRI_SLOT_INTERVAL));
+    TEST_ASSERT_TRUE(dri_due(1000, 1000 + DRI_SLOT_INTERVAL + 1));
 }
 
 void test_due_millis_wraparound() {
-    TEST_ASSERT_TRUE(dri_due(0xFFFFFFF0, 0xFFFFFFF0 + 100));
-    TEST_ASSERT_FALSE(dri_due(0xFFFFFFF0, 0xFFFFFFF0 + 10));
+    // UL suffix keeps the arithmetic in unsigned long on every host: the
+    // subtraction wraps the same way on 32- and 64-bit builds.
+    TEST_ASSERT_FALSE(dri_due(0xFFFFFFF0UL, 0xFFFFFFF0UL + 100UL));
+    TEST_ASSERT_TRUE(dri_due(0xFFFFFFF0UL, 0xFFFFFFF0UL + 101UL));
 }
 
 void test_pack_due_boundary() {
@@ -97,14 +99,14 @@ void test_wifi_nan_due_millis_wraparound() {
 
 // --- Schedule -------------------------------------------------------------
 
-void test_schedule_period_is_25() {
-    // 1 s at 40 ms guard interval: 25 slots per cycle.
-    TEST_ASSERT_EQUAL(25, DRI_SCHEDULE_PERIOD);
+void test_schedule_period_is_10() {
+    // 1 s at 100 ms slots: 10 slots per cycle.
+    TEST_ASSERT_EQUAL(10, DRI_SCHEDULE_PERIOD);
 }
 
 void test_counter_next_sequence_and_wrap() {
     uint8_t c = 0;
-    for (uint8_t expected = 1; expected <= 25; expected++) {
+    for (uint8_t expected = 1; expected <= 10; expected++) {
         c = dri_counter_next(c);
         TEST_ASSERT_EQUAL(expected, c);
     }
@@ -113,11 +115,36 @@ void test_counter_next_sequence_and_wrap() {
 
 void test_slot_type_mapping() {
     TEST_ASSERT_EQUAL(DRI_SLOT_BASIC_ID, dri_slot_type(1));
-    TEST_ASSERT_EQUAL(DRI_SLOT_SELF_ID, dri_slot_type(2));
-    TEST_ASSERT_EQUAL(DRI_SLOT_OPERATOR_ID, dri_slot_type(3));
-    TEST_ASSERT_EQUAL(DRI_SLOT_SYSTEM, dri_slot_type(4));
-    TEST_ASSERT_EQUAL(DRI_SLOT_LOCATION, dri_slot_type(5));
-    TEST_ASSERT_EQUAL(DRI_SLOT_LOCATION, dri_slot_type(25));
+    TEST_ASSERT_EQUAL(DRI_SLOT_LOCATION, dri_slot_type(2));
+    TEST_ASSERT_EQUAL(DRI_SLOT_SYSTEM, dri_slot_type(3));
+    TEST_ASSERT_EQUAL(DRI_SLOT_LOCATION, dri_slot_type(4));
+    TEST_ASSERT_EQUAL(DRI_SLOT_SELF_ID, dri_slot_type(5));
+    TEST_ASSERT_EQUAL(DRI_SLOT_LOCATION, dri_slot_type(6));
+    TEST_ASSERT_EQUAL(DRI_SLOT_BASIC_ID, dri_slot_type(7));
+    TEST_ASSERT_EQUAL(DRI_SLOT_LOCATION, dri_slot_type(8));
+    TEST_ASSERT_EQUAL(DRI_SLOT_SYSTEM, dri_slot_type(9));
+    TEST_ASSERT_EQUAL(DRI_SLOT_OPERATOR_ID, dri_slot_type(10));
+}
+
+void test_slot_cycle_services_message_rates() {
+    // One full cycle (1 s) must deliver Location >= 1 Hz (fresh data),
+    // Basic ID and System >= 1 Hz (the FAA/Japan tightening), Self-ID and
+    // Operator ID >= every 3 s. The allocation: 4 location, 2 basic id,
+    // 2 system, 1 self id, 1 operator id.
+    unsigned counts[5] = { 0 };
+    for (uint8_t slot = 1; slot <= DRI_SCHEDULE_PERIOD; slot++)
+        counts[dri_slot_type(slot)]++;
+    TEST_ASSERT_EQUAL(4, counts[DRI_SLOT_LOCATION]);
+    TEST_ASSERT_EQUAL(2, counts[DRI_SLOT_BASIC_ID]);
+    TEST_ASSERT_EQUAL(2, counts[DRI_SLOT_SYSTEM]);
+    TEST_ASSERT_EQUAL(1, counts[DRI_SLOT_SELF_ID]);
+    TEST_ASSERT_EQUAL(1, counts[DRI_SLOT_OPERATOR_ID]);
+    // Location slots are spread: no gap wider than 3 slots (300 ms) keeps
+    // the 1 s freshness rule comfortable even around skipped slots.
+    TEST_ASSERT_EQUAL(DRI_SLOT_LOCATION, dri_slot_type(2));
+    TEST_ASSERT_EQUAL(DRI_SLOT_LOCATION, dri_slot_type(4));
+    TEST_ASSERT_EQUAL(DRI_SLOT_LOCATION, dri_slot_type(6));
+    TEST_ASSERT_EQUAL(DRI_SLOT_LOCATION, dri_slot_type(8));
 }
 
 // --- Byte-exact encodings -------------------------------------------------
@@ -137,11 +164,15 @@ void test_encode_slot_matches_reference_bytes() {
         const char *name;
     } cases[] = {
         { 1, "basic_id" },
-        { 2, "self_id" },
-        { 3, "operator_id" },
-        { 4, "system" },
-        { 5, "location" },
-        { 25, "location" },
+        { 2, "location" },
+        { 3, "system" },
+        { 4, "location" },
+        { 5, "self_id" },
+        { 6, "location" },
+        { 7, "basic_id" },
+        { 8, "location" },
+        { 9, "system" },
+        { 10, "operator_id" },
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         std::string expected = reference(cases[i].name);
@@ -160,10 +191,15 @@ void test_message_header_type_and_version() {
         uint8_t header; // type << 4 | protocol version 2
     } cases[] = {
         { 1, 0x02 }, // Basic ID
-        { 2, 0x32 }, // Self-ID
-        { 3, 0x52 }, // Operator ID
-        { 4, 0x42 }, // System
-        { 5, 0x12 }, // Location/Vector
+        { 2, 0x12 }, // Location/Vector
+        { 3, 0x42 }, // System
+        { 4, 0x12 }, // Location/Vector
+        { 5, 0x32 }, // Self-ID
+        { 6, 0x12 }, // Location/Vector
+        { 7, 0x02 }, // Basic ID
+        { 8, 0x12 }, // Location/Vector
+        { 9, 0x42 }, // System
+        { 10, 0x52 }, // Operator ID
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         ODID_Message_encoded encoded;
@@ -175,7 +211,7 @@ void test_message_header_type_and_version() {
 void test_service_data_frame() {
     build_reference_data();
     ODID_Message_encoded encoded;
-    dri_encode_slot(&data, 5, &encoded);
+    dri_encode_slot(&data, 2, &encoded);
 
     uint8_t buf[ODID_MESSAGE_SIZE + 2];
     size_t len = dri_build_service_data(0x2A, &encoded, buf);
@@ -217,16 +253,17 @@ void test_service_data_frame_full_payload() {
 void test_adv_frame_on_air_constants() {
     // What the ESP32 body puts on the air: the ASTM Remote ID service UUID
     // the advertisement carries the service data under, and the advertising
-    // interval in 0.625 ms BLE slots (DRI_INTERVAL == 20 ms -> 32). Both
-    // live in the DRIFT_NO_BLE-free seam, so they are pinnable natively.
+    // interval in 0.625 ms BLE slots (DRI_SLOT_INTERVAL == 100 ms -> 160,
+    // the Core Spec minimum for ADV_NONCONN_IND). Both live in the
+    // DRIFT_NO_BLE-free seam, so they are pinnable natively.
     TEST_ASSERT_EQUAL_HEX16(0xFFFA, DRI_UUID);
-    TEST_ASSERT_EQUAL(32, BLE_ADV_INTERVAL);
+    TEST_ASSERT_EQUAL(160, BLE_ADV_INTERVAL);
 }
 
 void test_adv_frame_carries_the_service_data() {
     build_reference_data();
     ODID_Message_encoded encoded;
-    dri_encode_slot(&data, 5, &encoded);
+    dri_encode_slot(&data, 2, &encoded);
 
     BleAdvFrame frame;
     size_t len = ble_build_adv_frame(0x2A, &encoded, &frame);
@@ -309,7 +346,7 @@ void test_build_pack_boot_is_location_only() {
     TEST_ASSERT_EQUAL_HEX8(0x12, buf[3]);  // location header
 
     ODID_Message_encoded location;
-    dri_encode_slot(&data, 5, &location);
+    dri_encode_slot(&data, 2, &location);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(location.rawData, buf + 3, ODID_MESSAGE_SIZE);
 }
 
@@ -370,7 +407,7 @@ void test_transmit_skips_unencodable_pack() {
 void test_bt4_ad_on_air_bytes() {
     build_reference_data();
     ODID_Message_encoded enc;
-    dri_encode_slot(&data, 5, &enc);
+    dri_encode_slot(&data, 2, &enc);
 
     uint8_t ad[BLE_BT4_AD_SIZE + 2];
     memset(ad, 0xAA, sizeof(ad));
@@ -838,7 +875,7 @@ void test_encode_slot_rejects_out_of_range_direction() {
     data.Location.Direction = 655.35f;  // MAVLink hdg = UINT16_MAX ("unknown")
 
     ODID_Message_encoded encoded;
-    TEST_ASSERT_FALSE(dri_encode_slot(&data, 5, &encoded));
+    TEST_ASSERT_FALSE(dri_encode_slot(&data, 2, &encoded));
 }
 
 void test_encode_slot_rejects_out_of_range_height() {
@@ -846,7 +883,7 @@ void test_encode_slot_rejects_out_of_range_height() {
     data.Location.Height = 2147483.75f;  // relative_alt near INT32_MAX / 1000
 
     ODID_Message_encoded encoded;
-    TEST_ASSERT_FALSE(dri_encode_slot(&data, 5, &encoded));
+    TEST_ASSERT_FALSE(dri_encode_slot(&data, 2, &encoded));
 }
 
 void test_encode_slot_rejects_out_of_range_altitude() {
@@ -854,7 +891,7 @@ void test_encode_slot_rejects_out_of_range_altitude() {
     data.Location.AltitudeGeo = 2147483.75f;
 
     ODID_Message_encoded encoded;
-    TEST_ASSERT_FALSE(dri_encode_slot(&data, 5, &encoded));
+    TEST_ASSERT_FALSE(dri_encode_slot(&data, 2, &encoded));
 }
 
 void test_encode_slot_unknown_sentinels_encode() {
@@ -868,7 +905,7 @@ void test_encode_slot_unknown_sentinels_encode() {
     data.Location.Height = INV_ALT;
 
     ODID_Message_encoded encoded;
-    TEST_ASSERT_TRUE(dri_encode_slot(&data, 5, &encoded));
+    TEST_ASSERT_TRUE(dri_encode_slot(&data, 2, &encoded));
     std::string expected = reference("location_unknown");
     TEST_ASSERT_EQUAL_HEX8_ARRAY((const uint8_t *)expected.data(), encoded.rawData, ODID_MESSAGE_SIZE);
 }
@@ -880,33 +917,42 @@ void test_transmit_gating_schedule_and_counters() {
     build_reference_data();
     ble_send_reset();
 
-    // Guard interval (DRI_INTERVAL * DRI_GUARD_MULTIPLIER = 40 ms) not yet
-    // elapsed: nothing is broadcast, the schedule does not advance.
-    dri_transmit(&data, 1000 + DRI_INTERVAL * DRI_GUARD_MULTIPLIER);
+    // Slot interval (DRI_SLOT_INTERVAL = 100 ms, the ADV_NONCONN_IND
+    // advertising floor) not yet elapsed: nothing is broadcast, the
+    // schedule does not advance.
+    dri_transmit(&data, 1000 + DRI_SLOT_INTERVAL);
     TEST_ASSERT_EQUAL(0, ble_send_count);
 
     // Due: the first scheduled slot (Basic ID) goes out, counter starts at 0.
-    dri_transmit(&data, 1000 + DRI_INTERVAL * DRI_GUARD_MULTIPLIER + 1);
+    dri_transmit(&data, 1000 + DRI_SLOT_INTERVAL + 1);
     TEST_ASSERT_EQUAL(1, ble_send_count);
     TEST_ASSERT_EQUAL(0, ble_send_counters[0]);
     TEST_ASSERT_EQUAL_HEX8(0x02, ble_send_messages[0].rawData[0]);
 
-    // Run to the end of the 25-slot cycle plus the wrap slot.
-    unsigned long now = 1000 + DRI_INTERVAL * DRI_GUARD_MULTIPLIER + 1;
-    for (int i = 0; i < 100 && ble_send_count < 26; i++)
-        dri_transmit(&data, now += 100);
+    // Run to the end of the 10-slot cycle plus the wrap slot. Steps of
+    // 110 ms keep every call past the 100 ms guard.
+    unsigned long now = 1000 + DRI_SLOT_INTERVAL + 1;
+    for (int i = 0; i < 100 && ble_send_count < 11; i++)
+        dri_transmit(&data, now += 110);
 
-    TEST_ASSERT_EQUAL(26, ble_send_count);
+    TEST_ASSERT_EQUAL(11, ble_send_count);
+    // One full cycle in order: Basic, Loc, System, Loc, SelfID, Loc,
+    // Basic, Loc, System, OpID (the F3411 rate allocation).
+    static const uint8_t cycle_headers[10] = {
+        0x02, 0x12, 0x42, 0x12, 0x32, 0x12, 0x02, 0x12, 0x42, 0x52
+    };
+    for (int i = 0; i < 10; i++)
+        TEST_ASSERT_EQUAL_HEX8(cycle_headers[i], ble_send_messages[i].rawData[0]);
     // The schedule wrapped back to the Basic ID slot; the message counter
     // incremented once per emitted message.
-    TEST_ASSERT_EQUAL_HEX8(0x02, ble_send_messages[25].rawData[0]);
-    TEST_ASSERT_EQUAL(25, ble_send_counters[25]);
-    for (int i = 1; i < 26; i++)
+    TEST_ASSERT_EQUAL_HEX8(0x02, ble_send_messages[10].rawData[0]);
+    TEST_ASSERT_EQUAL(10, ble_send_counters[10]);
+    for (int i = 1; i < 11; i++)
         TEST_ASSERT_EQUAL(ble_send_counters[i - 1] + 1, ble_send_counters[i]);
 }
 
 void test_transmit_skips_unencodable_slot() {
-    // Direction out of the ODID range: every location slot (21 per 25-slot
+    // Direction out of the ODID range: every location slot (4 per 10-slot
     // cycle) is skipped - not broadcast as a pre-zeroed message - while the
     // schedule keeps rotating and the identity/system slots still go out.
     dri_init(&data, 1000);
@@ -915,14 +961,14 @@ void test_transmit_skips_unencodable_slot() {
     ble_send_reset();
 
     unsigned long now = 1000;
-    for (int i = 0; i < 50; i++)  // two full 25-slot cycles
-        dri_transmit(&data, now += 100);
+    for (int i = 0; i < 20; i++)  // two full 10-slot cycles
+        dri_transmit(&data, now += 110);
 
-    // Two cycles * four identity/system slots; no location message emitted.
-    TEST_ASSERT_EQUAL(8, ble_send_count);
-    for (int i = 0; i < 8; i++)
+    // Two cycles * six non-location slots; no location message emitted.
+    TEST_ASSERT_EQUAL(12, ble_send_count);
+    for (int i = 0; i < 12; i++)
         TEST_ASSERT_NOT_EQUAL(ODID_MESSAGETYPE_LOCATION, ble_send_messages[i].rawData[0] >> 4);
-    for (int i = 1; i < 8; i++)
+    for (int i = 1; i < 12; i++)
         TEST_ASSERT_EQUAL(ble_send_counters[i - 1] + 1, ble_send_counters[i]);
 }
 
@@ -931,7 +977,7 @@ void test_transmit_skips_unencodable_slot() {
 void test_encode_decode_round_trip() {
     build_reference_data();
     ODID_Message_encoded encoded;
-    dri_encode_slot(&data, 5, &encoded);
+    dri_encode_slot(&data, 2, &encoded);
 
     ODID_Location_data decoded;
     TEST_ASSERT_EQUAL(0, decodeLocationMessage(&decoded, (ODID_Location_encoded *)&encoded));
@@ -953,9 +999,10 @@ int main(int, char **) {
     RUN_TEST(test_wifi_beacon_due_millis_wraparound);
     RUN_TEST(test_wifi_nan_due_boundary);
     RUN_TEST(test_wifi_nan_due_millis_wraparound);
-    RUN_TEST(test_schedule_period_is_25);
+    RUN_TEST(test_schedule_period_is_10);
     RUN_TEST(test_counter_next_sequence_and_wrap);
     RUN_TEST(test_slot_type_mapping);
+    RUN_TEST(test_slot_cycle_services_message_rates);
     RUN_TEST(test_encode_slot_matches_reference_bytes);
     RUN_TEST(test_message_header_type_and_version);
     RUN_TEST(test_service_data_frame);

@@ -25,8 +25,8 @@ def unknown_telemetry(t):
     sends = t.ble_sends(full_cycle)
     cycle = cycle_of(sends)
     if cycle is None:
-        t.check_eq("a full 25-slot schedule captured", len(sends), CYCLE_LENGTH)
+        t.check_eq("a full 10-slot schedule captured", len(sends), CYCLE_LENGTH)
         return
     t.check_eq("every location slot matches the unknown-sentinels reference encoding",
-               [record[1] for record in cycle[4:CYCLE_LENGTH]],
-               [odid_fixture("location_unknown")] * (CYCLE_LENGTH - 4))
+               [cycle[i][1] for i in (1, 3, 5, 7)],
+               [odid_fixture("location_unknown")] * 4)

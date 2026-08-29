@@ -5,9 +5,17 @@
 #include <stdint.h>
 #include <opendroneid.h>
 
-#define DRI_INTERVAL 20         // ms
-#define DRI_GUARD_MULTIPLIER 2  // ensure there is sufficient time to broadcast
-#define DRI_SCHEDULE_PERIOD (1000 / DRI_INTERVAL / DRI_GUARD_MULTIPLIER)
+// One ODID message per 100 ms slot. 100 ms is the Bluetooth Core Spec
+// minimum advertising interval for ADV_NONCONN_IND (Vol 4, Part E, 7.8.5:
+// non-connectable advertising shall not be configured faster than
+// 0x00A0 = 100 ms — DRIFT previously ran 20 ms, five times below the
+// floor), and a cadence that services the F3411 message-rate requirements
+// with margin: 10 slots/s carry Location at 2.5 Hz (spec: >= 1 Hz, <= 1 s
+// freshness), Basic ID and System at 2 Hz (FAA/Japan: 1 Hz), Self-ID and
+// Operator ID at 1 Hz (baseline: every 3 s). The BLE advertising interval
+// equals the slot interval, so each payload is advertised exactly once.
+#define DRI_SLOT_INTERVAL 100  // ms between broadcast schedule slots
+#define DRI_SCHEDULE_PERIOD (1000 / DRI_SLOT_INTERVAL)
 
 // The BLE5 Long Range transport broadcasts a Message Pack (ODID message type
 // 0xF): every currently valid message combined into one payload, on its own

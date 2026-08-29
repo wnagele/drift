@@ -22,7 +22,7 @@ static uint8_t wifi_nan_counter = 0;
 static unsigned long last_wifi_nan = 0;
 
 bool dri_due(unsigned long last_due, unsigned long now) {
-    return now - last_due > DRI_INTERVAL * DRI_GUARD_MULTIPLIER;
+    return now - last_due > DRI_SLOT_INTERVAL;
 }
 
 bool dri_pack_due(unsigned long last_due, unsigned long now) {
@@ -42,15 +42,23 @@ uint8_t dri_counter_next(uint8_t schedule) {
 }
 
 uint8_t dri_slot_type(uint8_t schedule) {
+    // The 10-slot cycle allocates the F3411 message rates with margin
+    // (Location 2.5 Hz; Basic ID and System 2 Hz — the FAA/Japan 1 Hz
+    // requirement; Self-ID and Operator ID 1 Hz against the 3 s baseline):
+    //
+    //   slot:    1     2        3      4        5       6        7     8        9      10
+    //   message: Basic Loc    System Loc    SelfID  Loc    Basic Loc    System OpID
     switch (schedule) {
         case 1:
+        case 7:
             return DRI_SLOT_BASIC_ID;
-        case 2:
-            return DRI_SLOT_SELF_ID;
         case 3:
-            return DRI_SLOT_OPERATOR_ID;
-        case 4:
+        case 9:
             return DRI_SLOT_SYSTEM;
+        case 5:
+            return DRI_SLOT_SELF_ID;
+        case 10:
+            return DRI_SLOT_OPERATOR_ID;
         default:
             return DRI_SLOT_LOCATION;
     }
