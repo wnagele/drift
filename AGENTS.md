@@ -35,9 +35,11 @@ UART (Serial0 on device, Serial1 in e2e) 9600 baud
                              clamping to ODID "unknown" sentinels, arm/fix gates)
   -> dri.cpp                 dri_update_status/location/operator() into the one
                              global ODID_UAS_Data, marking messages *Valid
-  -> dri.cpp dri_transmit()  BT4: 40 ms guard (dri_due), 25-slot round robin
-                             (1 basic id, 1 self id, 1 operator id, 1 system,
-                             21 location per second), vendored encoders
+  -> dri.cpp dri_transmit()  BT4: 100 ms slots (dri_due; the Core Spec
+                              ADV_NONCONN_IND advertising floor), 10-slot
+                              round robin (2 basic id, 4 location, 2 system,
+                              1 self id, 1 operator id per second — the
+                              F3411 rate allocation), vendored encoders
                              BT5: 1 s guard (dri_pack_due), one Message Pack
                              (odid_message_build_pack) of every valid message
                              Wi-Fi Beacon: 200 ms guard (dri_wifi_beacon_due), the

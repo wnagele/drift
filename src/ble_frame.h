@@ -13,9 +13,11 @@
 // the payload and the advertising interval - are pinned by the native tests
 // instead of living only in the ESP32-only body.
 
-// BLE advertising intervals are counted in 0.625 ms slots; the announcements
-// keep the pace of the broadcast schedule (DRI_INTERVAL).
-#define BLE_ADV_INTERVAL ((uint16_t)(DRI_INTERVAL / 0.625))
+// BLE advertising intervals are counted in 0.625 ms slots. The BT4
+// announcement advertises at the broadcast schedule's slot cadence (each
+// payload exactly once), and 100 ms is the Core Spec minimum for
+// ADV_NONCONN_IND non-connectable advertising (Vol 4, Part E, 7.8.5).
+#define BLE_ADV_INTERVAL ((uint16_t)(DRI_SLOT_INTERVAL / 0.625))
 
 // The BLE5 Long Range instance repeats the message pack inside the
 // DRI_PACK_INTERVAL window (same 0.625 ms slots).
