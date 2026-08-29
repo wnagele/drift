@@ -9,6 +9,14 @@
 #define DRI_GUARD_MULTIPLIER 2  // ensure there is sufficient time to broadcast
 #define DRI_SCHEDULE_PERIOD (1000 / DRI_INTERVAL / DRI_GUARD_MULTIPLIER)
 
+// The BLE5 Long Range transport broadcasts a Message Pack (ODID message type
+// 0xF): every currently valid message combined into one payload, on its own
+// ~1 s cadence alongside the per-message slot schedule.
+#define DRI_PACK_INTERVAL 1000  // ms between message-pack broadcasts
+// Pack header (type/version, single-message size, message count) plus the
+// maximum of nine 25-byte messages.
+#define DRI_PACK_MAX_SIZE (3 + ODID_PACK_MAX_MESSAGES * ODID_MESSAGE_SIZE)
+
 #define DRI_UUID 0xFFFA         // ASTM
 #define DRI_APP_CODE 0x0D       // RD
 
@@ -28,8 +36,14 @@ uint8_t dri_slot_type(uint8_t schedule_counter);
 // instead of broadcasting the pre-zeroed buffer.
 bool dri_encode_slot(ODID_UAS_Data *data, uint8_t schedule_counter, ODID_Message_encoded *out);
 size_t dri_build_service_data(uint8_t msg_counter, const ODID_Message_encoded *encoded, uint8_t *out_buf);
+// Build a Message Pack from everything the UAS data marks valid. Returns the
+// encoded length, or <= 0 when the vendored builder rejects the input (an
+// empty pack - nothing valid yet - is rejected rather than broadcast).
+int dri_build_pack(ODID_UAS_Data *data, uint8_t *out_buf, size_t buflen);
+size_t dri_build_pack_service_data(uint8_t msg_counter, const uint8_t *pack, size_t pack_len, uint8_t *out_buf);
 void dri_populate_identity(ODID_UAS_Data *data, const char *ua_id, const char *op_id, const char *ua_desc);
 
+bool dri_pack_due(unsigned long last_due, unsigned long now);
 void dri_init(ODID_UAS_Data *data, unsigned long now);
 void dri_transmit(ODID_UAS_Data *data, unsigned long now);
 void dri_update_status(ODID_UAS_Data *data, ODID_status_t status);

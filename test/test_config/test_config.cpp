@@ -41,12 +41,52 @@ void test_init_creates_defaults() {
     TEST_ASSERT_EQUAL_STRING("", config_dri_ua_id().c_str());
     TEST_ASSERT_EQUAL_STRING("", config_dri_ua_desc().c_str());
     TEST_ASSERT_EQUAL_STRING("", config_dri_op_id().c_str());
+    // The BLE5 transport defaults to on.
+    TEST_ASSERT_TRUE(config_bt5_enabled());
 }
 
 void test_init_preserves_existing_values() {
     kv["wifi_ssid"] = "KEEPME";
+    kv["bt5_enabled"] = "0";
     config_init(&mem_storage, "DRIFT_ABCD");
     TEST_ASSERT_EQUAL_STRING("KEEPME", config_wifi_ssid().c_str());
+    TEST_ASSERT_FALSE(config_bt5_enabled());
+}
+
+// --- BLE5 transport enable --------------------------------------------------
+
+void test_bt5_save_disables_and_roundtrips() {
+    config_init(&mem_storage, "DRIFT_ABCD");
+    config_save(String("{\"dri\":{\"bt5_enabled\":false}}"));
+    TEST_ASSERT_FALSE(config_bt5_enabled());
+
+    // config_get() emits the stored state as a JSON boolean.
+    JsonDocument got;
+    TEST_ASSERT_FALSE(deserializeJson(got, config_get()));
+    TEST_ASSERT_FALSE(got["dri"]["bt5_enabled"].as<bool>());
+}
+
+void test_bt5_save_reenables() {
+    config_init(&mem_storage, "DRIFT_ABCD");
+    config_save(String("{\"dri\":{\"bt5_enabled\":false}}"));
+    config_save(String("{\"dri\":{\"bt5_enabled\":true}}"));
+    TEST_ASSERT_TRUE(config_bt5_enabled());
+}
+
+void test_bt5_missing_or_absent_field_keeps_default() {
+    // A POST that predates the field (or drops it) must not silently
+    // disable the Remote ID broadcast: absent/null/non-boolean keeps it on.
+    config_init(&mem_storage, "DRIFT_ABCD");
+    config_save(String("{\"dri\":{\"bt5_enabled\":false}}"));
+
+    config_save(String("{\"wifi\":{\"ssid\":\"X\"}}"));
+    TEST_ASSERT_TRUE(config_bt5_enabled());
+
+    config_save(String("{\"dri\":{\"bt5_enabled\":null}}"));
+    TEST_ASSERT_TRUE(config_bt5_enabled());
+
+    config_save(String("{\"dri\":{\"bt5_enabled\":\"yes\"}}"));
+    TEST_ASSERT_TRUE(config_bt5_enabled());
 }
 
 void test_save_get_roundtrip_matches_shared_fixture() {
@@ -150,6 +190,9 @@ int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_init_creates_defaults);
     RUN_TEST(test_init_preserves_existing_values);
+    RUN_TEST(test_bt5_save_disables_and_roundtrips);
+    RUN_TEST(test_bt5_save_reenables);
+    RUN_TEST(test_bt5_missing_or_absent_field_keeps_default);
     RUN_TEST(test_save_get_roundtrip_matches_shared_fixture);
     RUN_TEST(test_malformed_json_keeps_existing_values);
     RUN_TEST(test_missing_sections_currently_store_null);

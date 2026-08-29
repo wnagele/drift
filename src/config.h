@@ -10,3 +10,4 @@ String config_wifi_password();
 String config_dri_ua_id();
 String config_dri_ua_desc();
 String config_dri_op_id();
+bool config_bt5_enabled();

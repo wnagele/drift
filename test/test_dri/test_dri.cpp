@@ -56,6 +56,18 @@ void test_due_millis_wraparound() {
     TEST_ASSERT_FALSE(dri_due(0xFFFFFFF0, 0xFFFFFFF0 + 10));
 }
 
+void test_pack_due_boundary() {
+    TEST_ASSERT_FALSE(dri_pack_due(1000, 1000 + DRI_PACK_INTERVAL));
+    TEST_ASSERT_TRUE(dri_pack_due(1000, 1000 + DRI_PACK_INTERVAL + 1));
+}
+
+void test_pack_due_millis_wraparound() {
+    // UL suffix keeps the arithmetic in unsigned long on every host: the
+    // subtraction wraps the same way on 32- and 64-bit builds.
+    TEST_ASSERT_TRUE(dri_pack_due(0xFFFFFFF0UL, 0xFFFFFFF0UL + 2000UL));
+    TEST_ASSERT_FALSE(dri_pack_due(0xFFFFFFF0UL, 0xFFFFFFF0UL + 500UL));
+}
+
 // --- Schedule -------------------------------------------------------------
 
 void test_schedule_period_is_25() {
@@ -221,6 +233,192 @@ void test_adv_frame_full_payload() {
     TEST_ASSERT_EQUAL_HEX8_ARRAY(enc.rawData, frame.data + 2, ODID_MESSAGE_SIZE);
 }
 
+// --- Message pack (BLE5 Long Range transport) ------------------------------
+
+// The reference aircraft's pack: header (type 0xF, protocol version 2,
+// single-message size 25, count 5) followed by every valid message in the
+// vendored builder's order - Basic ID, Location, Self-ID, System, Operator ID
+// - each byte-exact against the reference encodings.
+void test_build_pack_matches_reference_bytes() {
+    build_reference_data();
+    uint8_t buf[DRI_PACK_MAX_SIZE];
+    int len = dri_build_pack(&data, buf, sizeof(buf));
+
+    TEST_ASSERT_TRUE(len > 0);
+    TEST_ASSERT_EQUAL(3 + 5 * ODID_MESSAGE_SIZE, len);
+    TEST_ASSERT_EQUAL_HEX8(0xF2, buf[0]);  // (ODID_MESSAGETYPE_PACKED << 4) | 2
+    TEST_ASSERT_EQUAL(ODID_MESSAGE_SIZE, buf[1]);
+    TEST_ASSERT_EQUAL(5, buf[2]);
+
+    const char *names[] = { "basic_id", "location", "self_id", "system", "operator_id" };
+    for (int i = 0; i < 5; i++) {
+        std::string expected = reference(names[i]);
+        char msg[64];
+        snprintf(msg, sizeof(msg), "pack message %d", i);
+        TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE((const uint8_t *)expected.data(),
+                                             buf + 3 + i * ODID_MESSAGE_SIZE,
+                                             ODID_MESSAGE_SIZE, msg);
+    }
+}
+
+void test_build_pack_empty_is_rejected() {
+    // Nothing valid: the builder refuses an empty pack instead of letting
+    // the transport broadcast one.
+    odid_initUasData(&data);
+    uint8_t buf[DRI_PACK_MAX_SIZE];
+    TEST_ASSERT_TRUE(dri_build_pack(&data, buf, sizeof(buf)) <= 0);
+}
+
+void test_build_pack_boot_is_location_only() {
+    // From power-on the pack carries just the location message (the ODID
+    // "unknown" sentinels odid_initUasData() fills in) - exactly what the
+    // BT4 schedule's location slots broadcast before any telemetry arrives.
+    dri_init(&data, 1000);
+    uint8_t buf[DRI_PACK_MAX_SIZE];
+    int len = dri_build_pack(&data, buf, sizeof(buf));
+
+    TEST_ASSERT_EQUAL(3 + ODID_MESSAGE_SIZE, len);
+    TEST_ASSERT_EQUAL(1, buf[2]);
+    TEST_ASSERT_EQUAL_HEX8(0x12, buf[3]);  // location header
+
+    ODID_Message_encoded location;
+    dri_encode_slot(&data, 5, &location);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(location.rawData, buf + 3, ODID_MESSAGE_SIZE);
+}
+
+void test_build_pack_service_data() {
+    build_reference_data();
+    uint8_t pack[DRI_PACK_MAX_SIZE];
+    int pack_len = dri_build_pack(&data, pack, sizeof(pack));
+    TEST_ASSERT_TRUE(pack_len > 0);
+
+    uint8_t buf[DRI_PACK_MAX_SIZE + 2];
+    memset(buf, 0xAA, sizeof(buf));
+    size_t len = dri_build_pack_service_data(0x2A, pack, pack_len, buf);
+
+    TEST_ASSERT_EQUAL((size_t)pack_len + 2, len);
+    TEST_ASSERT_EQUAL_HEX8(DRI_APP_CODE, buf[0]);
+    TEST_ASSERT_EQUAL_HEX8(0x2A, buf[1]);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(pack, buf + 2, pack_len);
+}
+
+void test_transmit_pack_schedule_and_counters() {
+    dri_init(&data, 1000);
+    build_reference_data();
+    ble_send_reset();
+
+    // Not due until a full DRI_PACK_INTERVAL has elapsed; the pack counter
+    // starts at 0 and the BT4 slot schedule is unaffected by the pack path.
+    dri_transmit(&data, 1000 + DRI_PACK_INTERVAL);
+    TEST_ASSERT_EQUAL(0, ble_pack_send_count);
+
+    dri_transmit(&data, 1000 + DRI_PACK_INTERVAL + 1);
+    TEST_ASSERT_EQUAL(1, ble_pack_send_count);
+    TEST_ASSERT_EQUAL(0, ble_pack_send_counters[0]);
+    TEST_ASSERT_EQUAL(3 + 5 * ODID_MESSAGE_SIZE, ble_pack_send_lens[0]);
+    TEST_ASSERT_EQUAL_HEX8(0xF2, ble_pack_send_bytes[0][0]);
+
+    dri_transmit(&data, 1000 + 2 * DRI_PACK_INTERVAL + 2);
+    TEST_ASSERT_EQUAL(2, ble_pack_send_count);
+    TEST_ASSERT_EQUAL(1, ble_pack_send_counters[1]);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(ble_pack_send_bytes[0], ble_pack_send_bytes[1],
+                                 ble_pack_send_lens[0]);
+}
+
+void test_transmit_skips_unencodable_pack() {
+    // Out-of-range telemetry on an otherwise unconfigured aircraft: the only
+    // valid message (location) fails to encode, the pack comes back empty
+    // and the transport must stay silent rather than broadcast a truncated
+    // pack - mirroring the BT4 slot skip.
+    dri_init(&data, 1000);
+    data.Location.Direction = 655.35f;  // MAVLink hdg = UINT16_MAX ("unknown")
+    ble_send_reset();
+
+    dri_transmit(&data, 1000 + DRI_PACK_INTERVAL + 1);
+    TEST_ASSERT_EQUAL(0, ble_pack_send_count);
+}
+
+// --- Raw advertising data (what goes on air) --------------------------------
+
+void test_bt4_ad_on_air_bytes() {
+    build_reference_data();
+    ODID_Message_encoded enc;
+    dri_encode_slot(&data, 5, &enc);
+
+    uint8_t ad[BLE_BT4_AD_SIZE + 2];
+    memset(ad, 0xAA, sizeof(ad));
+    size_t len = ble_build_bt4_ad(0x2A, &enc, ad, sizeof(ad));
+
+    // Complete Service Data AD structure: [0x1E][0x16][FA][FF][service data],
+    // exactly filling the 31-byte legacy PDU payload.
+    TEST_ASSERT_EQUAL(31, len);
+    TEST_ASSERT_EQUAL_HEX8(0x1E, ad[0]);
+    TEST_ASSERT_EQUAL_HEX8(0x16, ad[1]);
+    TEST_ASSERT_EQUAL_HEX8(0xFA, ad[2]);  // ASTM UUID 0xFFFA, little-endian
+    TEST_ASSERT_EQUAL_HEX8(0xFF, ad[3]);
+    TEST_ASSERT_EQUAL_HEX8(DRI_APP_CODE, ad[4]);
+    TEST_ASSERT_EQUAL_HEX8(0x2A, ad[5]);
+    std::string expected = reference("location");
+    TEST_ASSERT_EQUAL_HEX8_ARRAY((const uint8_t *)expected.data(), ad + 6, ODID_MESSAGE_SIZE);
+    TEST_ASSERT_EQUAL_HEX8(0xAA, ad[31]);  // nothing past the AD structure
+}
+
+void test_bt5_ad_carries_the_pack() {
+    build_reference_data();
+    uint8_t pack[DRI_PACK_MAX_SIZE];
+    int pack_len = dri_build_pack(&data, pack, sizeof(pack));
+    TEST_ASSERT_TRUE(pack_len > 0);
+
+    uint8_t ad[BLE_BT5_AD_SIZE + 2];
+    memset(ad, 0xAA, sizeof(ad));
+    size_t len = ble_build_bt5_ad(0x2A, pack, pack_len, ad, sizeof(ad));
+
+    TEST_ASSERT_EQUAL((size_t)pack_len + 6, len);
+    TEST_ASSERT_EQUAL_HEX8(pack_len + 5, ad[0]);  // AD length: everything after this byte
+    TEST_ASSERT_EQUAL_HEX8(0x16, ad[1]);
+    TEST_ASSERT_EQUAL_HEX8(0xFA, ad[2]);
+    TEST_ASSERT_EQUAL_HEX8(0xFF, ad[3]);
+    TEST_ASSERT_EQUAL_HEX8(DRI_APP_CODE, ad[4]);
+    TEST_ASSERT_EQUAL_HEX8(0x2A, ad[5]);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(pack, ad + 6, pack_len);
+    TEST_ASSERT_EQUAL_HEX8(0xAA, ad[pack_len + 6]);  // nothing past the AD structure
+}
+
+void test_bt5_ad_full_payload() {
+    // No-zero-byte discipline: a pack with no zero bytes catches a truncated
+    // copy through the non-zero tail, and the 0xAA-prefilled oversized
+    // buffer catches an overrun past the AD structure.
+    uint8_t pack[3 + 2 * ODID_MESSAGE_SIZE];
+    for (size_t i = 0; i < sizeof(pack); i++)
+        pack[i] = (uint8_t)(0xD0 + (i % 16));
+
+    uint8_t ad[BLE_BT5_AD_SIZE + 2];
+    memset(ad, 0xAA, sizeof(ad));
+    size_t len = ble_build_bt5_ad(0x01, pack, sizeof(pack), ad, sizeof(ad));
+
+    TEST_ASSERT_EQUAL(sizeof(pack) + 6, len);
+    TEST_ASSERT_EQUAL_HEX8(pack[sizeof(pack) - 1], ad[len - 1]);
+    TEST_ASSERT_EQUAL_HEX8(0xAA, ad[len]);
+}
+
+void test_bt5_ad_rejects_bad_input() {
+    uint8_t pack[DRI_PACK_MAX_SIZE];
+    memset(pack, 0x55, sizeof(pack));
+    uint8_t ad[BLE_BT5_AD_SIZE];
+
+    TEST_ASSERT_EQUAL(0, ble_build_bt5_ad(0, pack, 0, ad, sizeof(ad)));
+    TEST_ASSERT_EQUAL(0, ble_build_bt5_ad(0, pack, DRI_PACK_MAX_SIZE + 1, ad, sizeof(ad)));
+    TEST_ASSERT_EQUAL(0, ble_build_bt5_ad(0, pack, DRI_PACK_MAX_SIZE, ad, DRI_PACK_MAX_SIZE));
+}
+
+void test_ble5_adv_interval_constants() {
+    // The BT5 instance repeats the message pack inside the 1 s pack window:
+    // 1600 slots of 0.625 ms, with 1200 as the minimum (0.75 x, the spacing
+    // production Remote ID modules use for the coded-PHY instance).
+    TEST_ASSERT_EQUAL_UINT32(1600, BLE5_ADV_INTERVAL_MAX);
+    TEST_ASSERT_EQUAL_UINT32(1200, BLE5_ADV_INTERVAL_MIN);
+}
+
 // --- Identity population --------------------------------------------------
 
 void test_populate_identity_sets_fields() {
@@ -232,6 +430,22 @@ void test_populate_identity_sets_fields() {
     TEST_ASSERT_EQUAL_STRING(OP_ID, data.OperatorID.OperatorId);
     TEST_ASSERT_EQUAL(ODID_DESC_TYPE_TEXT, data.SelfID.DescType);
     TEST_ASSERT_EQUAL_STRING(UA_DESC, data.SelfID.Desc);
+}
+
+void test_populate_identity_sets_valid_flags() {
+    // The message pack is composed from the *Valid flags: an accepted field
+    // must mark its message valid, a rejected one must not.
+    odid_initUasData(&data);
+    dri_populate_identity(&data, UA_ID, OP_ID, UA_DESC);
+    TEST_ASSERT_EQUAL(1, data.BasicIDValid[0]);
+    TEST_ASSERT_EQUAL(1, data.OperatorIDValid);
+    TEST_ASSERT_EQUAL(1, data.SelfIDValid);
+
+    odid_initUasData(&data);
+    dri_populate_identity(&data, "", "", "");
+    TEST_ASSERT_EQUAL(0, data.BasicIDValid[0]);
+    TEST_ASSERT_EQUAL(0, data.OperatorIDValid);
+    TEST_ASSERT_EQUAL(0, data.SelfIDValid);
 }
 
 void test_populate_identity_empty_strings_leave_defaults() {
@@ -331,6 +545,10 @@ void test_update_setters() {
     TEST_ASSERT_EQUAL_DOUBLE(OPERATOR_LAT, data.System.OperatorLatitude);
     TEST_ASSERT_EQUAL_DOUBLE(OPERATOR_LON, data.System.OperatorLongitude);
     TEST_ASSERT_EQUAL_DOUBLE(OPERATOR_ALT_GEO, data.System.OperatorAltitudeGeo);
+
+    // The dynamic setters mark their messages valid for the message pack.
+    TEST_ASSERT_EQUAL(1, data.LocationValid);
+    TEST_ASSERT_EQUAL(1, data.SystemValid);
 }
 
 // --- Encoder rejection of out-of-range data --------------------------------
@@ -454,6 +672,8 @@ int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_due_boundary);
     RUN_TEST(test_due_millis_wraparound);
+    RUN_TEST(test_pack_due_boundary);
+    RUN_TEST(test_pack_due_millis_wraparound);
     RUN_TEST(test_schedule_period_is_25);
     RUN_TEST(test_counter_next_sequence_and_wrap);
     RUN_TEST(test_slot_type_mapping);
@@ -464,7 +684,19 @@ int main(int, char **) {
     RUN_TEST(test_adv_frame_on_air_constants);
     RUN_TEST(test_adv_frame_carries_the_service_data);
     RUN_TEST(test_adv_frame_full_payload);
+    RUN_TEST(test_build_pack_matches_reference_bytes);
+    RUN_TEST(test_build_pack_empty_is_rejected);
+    RUN_TEST(test_build_pack_boot_is_location_only);
+    RUN_TEST(test_build_pack_service_data);
+    RUN_TEST(test_transmit_pack_schedule_and_counters);
+    RUN_TEST(test_transmit_skips_unencodable_pack);
+    RUN_TEST(test_bt4_ad_on_air_bytes);
+    RUN_TEST(test_bt5_ad_carries_the_pack);
+    RUN_TEST(test_bt5_ad_full_payload);
+    RUN_TEST(test_bt5_ad_rejects_bad_input);
+    RUN_TEST(test_ble5_adv_interval_constants);
     RUN_TEST(test_populate_identity_sets_fields);
+    RUN_TEST(test_populate_identity_sets_valid_flags);
     RUN_TEST(test_populate_identity_empty_strings_leave_defaults);
     RUN_TEST(test_populate_identity_overlong_strings_ignored);
     RUN_TEST(test_populate_identity_overlong_op_id_ignored);

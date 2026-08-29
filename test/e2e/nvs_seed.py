@@ -37,6 +37,8 @@ def main():
         ["dri_ua_id", "data", "string", config["dri"]["ua_id"]],
         ["dri_ua_desc", "data", "string", config["dri"]["ua_desc"]],
         ["dri_op_id", "data", "string", config["dri"]["op_id"]],
+        # Booleans ride the string-only storage seam as "1"/"0" (config.cpp).
+        ["bt5_enabled", "data", "string", "1" if config["dri"]["bt5_enabled"] else "0"],
     ]
     csv_path = out_bin + ".csv"
     with open(csv_path, "w", newline="") as f:

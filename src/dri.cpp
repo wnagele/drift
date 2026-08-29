@@ -7,8 +7,16 @@ static uint8_t msg_counter = 0;
 static uint8_t schedule_counter = 0;
 static unsigned long last = 0;
 
+static uint8_t pack[DRI_PACK_MAX_SIZE];
+static uint8_t pack_counter = 0;
+static unsigned long last_pack = 0;
+
 bool dri_due(unsigned long last_due, unsigned long now) {
     return now - last_due > DRI_INTERVAL * DRI_GUARD_MULTIPLIER;
+}
+
+bool dri_pack_due(unsigned long last_due, unsigned long now) {
+    return now - last_due > DRI_PACK_INTERVAL;
 }
 
 uint8_t dri_counter_next(uint8_t schedule) {
@@ -62,18 +70,34 @@ size_t dri_build_service_data(uint8_t msg_counter, const ODID_Message_encoded *e
     return ODID_MESSAGE_SIZE + 2;
 }
 
+int dri_build_pack(ODID_UAS_Data *data, uint8_t *out_buf, size_t buflen) {
+    return odid_message_build_pack(data, out_buf, buflen);
+}
+
+size_t dri_build_pack_service_data(uint8_t msg_counter, const uint8_t *pack, size_t pack_len, uint8_t *out_buf) {
+    memset(out_buf, 0, pack_len + 2);
+    out_buf[0] = (uint8_t)DRI_APP_CODE;
+    out_buf[1] = msg_counter;
+    for (size_t i = 0; i < pack_len; i++)
+        out_buf[2 + i] = pack[i];
+    return pack_len + 2;
+}
+
 void dri_populate_identity(ODID_UAS_Data *data, const char *ua_id, const char *op_id, const char *ua_desc) {
     if (ua_id[0] != '\0' && strlen(ua_id) <= ODID_ID_SIZE) {
         data->BasicID[0].IDType = ODID_IDTYPE_SERIAL_NUMBER;
         strncpy(data->BasicID[0].UASID, ua_id, ODID_ID_SIZE);
+        data->BasicIDValid[0] = 1;
     }
     if (op_id[0] != '\0' && strlen(op_id) <= ODID_ID_SIZE) {
         data->OperatorID.OperatorIdType = ODID_OPERATOR_ID;
         strncpy(data->OperatorID.OperatorId, op_id, ODID_ID_SIZE);
+        data->OperatorIDValid = 1;
     }
     if (ua_desc[0] != '\0' && strlen(ua_desc) <= ODID_STR_SIZE) {
         data->SelfID.DescType = ODID_DESC_TYPE_TEXT;
         strncpy(data->SelfID.Desc, ua_desc, ODID_STR_SIZE);
+        data->SelfIDValid = 1;
     }
 }
 
@@ -97,12 +121,31 @@ void dri_init(ODID_UAS_Data *data, unsigned long now) {
     data->System.AreaCeiling = 50;
     */
 
+    // The message pack (BLE5 transport) is composed from the *Valid flags.
+    // The location is part of the broadcast from power-on exactly like the
+    // BT4 schedule's location slots - odid_initUasData() has already filled
+    // it with the ODID "unknown" sentinels - while the identity and system
+    // messages only join once their data arrives (dri_populate_identity(),
+    // dri_update_operator()).
+    data->LocationValid = 1;
+
     msg_counter = 0;
     schedule_counter = 0;
     last = now;
+    pack_counter = 0;
+    last_pack = now;
 }
 
 void dri_transmit(ODID_UAS_Data *data, unsigned long now) {
+    if (dri_pack_due(last_pack, now)) {
+        last_pack = now;
+        int pack_len = dri_build_pack(data, pack, sizeof(pack));
+        // An empty pack (nothing valid) is rejected by the builder: skip the
+        // slot rather than broadcast an empty advertisement.
+        if (pack_len > 0)
+            ble_send_pack(pack_counter++, pack, pack_len);
+    }
+
     if (!dri_due(last, now))
         return;
     last = now;
@@ -131,6 +174,7 @@ void dri_update_location(
     data->Location.HeightType = ODID_HEIGHT_REF_OVER_TAKEOFF;
     data->Location.Height = rel_alt;
     data->Location.Direction = hdg;
+    data->LocationValid = 1;
 }
 
 void dri_update_operator(
@@ -143,4 +187,5 @@ void dri_update_operator(
     data->System.OperatorLatitude = lat;
     data->System.OperatorLongitude = lon;
     data->System.OperatorAltitudeGeo = alt;
+    data->SystemValid = 1;
 }

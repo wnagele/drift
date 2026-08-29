@@ -34,6 +34,7 @@ void setup() {
     net_init();
 
     ble_init(config_wifi_ssid().c_str());
+    ble5_init(config_bt5_enabled());
 
     mavlink_init(&mavlink_state);
 

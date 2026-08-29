@@ -7,6 +7,7 @@
 #define KEY_DRI_UA_ID "dri_ua_id"
 #define KEY_DRI_UA_DESC "dri_ua_desc"
 #define KEY_DRI_OP_ID "dri_op_id"
+#define KEY_BT5_ENABLED "bt5_enabled"
 
 static const ConfigStorage *storage;
 
@@ -22,6 +23,10 @@ void config_init(const ConfigStorage *storage_backend, const String &default_ssi
         storage->putString(KEY_DRI_UA_DESC, "");
     if (!storage->isKey(KEY_DRI_OP_ID))
         storage->putString(KEY_DRI_OP_ID, "");
+    // On unless turned off: both region profiles DRIFT targets broadcast
+    // BT5 alongside BT4.
+    if (!storage->isKey(KEY_BT5_ENABLED))
+        storage->putString(KEY_BT5_ENABLED, "1");
 }
 
 String config_get() {
@@ -31,6 +36,7 @@ String config_get() {
     doc["dri"]["ua_id"] = config_dri_ua_id();
     doc["dri"]["ua_desc"] = config_dri_ua_desc();
     doc["dri"]["op_id"] = config_dri_op_id();
+    doc["dri"]["bt5_enabled"] = config_bt5_enabled();
     String buf;
     serializeJson(doc, buf);
     return buf;
@@ -53,6 +59,10 @@ void config_save(String data) {
     storage->putString(KEY_DRI_UA_DESC, dri_ua_desc);
     String dri_op_id = doc["dri"]["op_id"];
     storage->putString(KEY_DRI_OP_ID, dri_op_id);
+    // A missing field must not silently disable the broadcast: absent or
+    // non-boolean values keep the default (on).
+    bool bt5_enabled = doc["dri"]["bt5_enabled"] | true;
+    storage->putString(KEY_BT5_ENABLED, bt5_enabled ? "1" : "0");
 }
 
 String config_wifi_ssid() {
@@ -73,4 +83,10 @@ String config_dri_ua_desc() {
 
 String config_dri_op_id() {
     return storage->getString(KEY_DRI_OP_ID);
+}
+
+// Booleans ride the string-only storage seam as "1"/"0" (the ESP backend
+// persists strings; the e2e NVS seed writes the same encoding).
+bool config_bt5_enabled() {
+    return storage->getString(KEY_BT5_ENABLED) != "0";
 }
