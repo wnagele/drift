@@ -89,6 +89,21 @@ describe('Config', () => {
     await waitFor(() => expect(posted.dri.wifi_beacon_enabled).toEqual(false));
   });
 
+  test('loads and submits the Wi-Fi NAN transport state', async () => {
+    const { container } = render(<Config />);
+    // The shared fixture has the opt-in transport off.
+    const toggle = await screen.findByRole('switch', { name: /wi-fi nan/i });
+    expect(toggle).not.toBeChecked();
+    fireEvent.submit(container.querySelector('form'));
+    await waitFor(() => expect(posted).not.toBeNull());
+    expect(posted.dri.wifi_nan_enabled).toEqual(false);
+
+    // Toggling it on is part of the posted wire format.
+    fireEvent.click(toggle);
+    fireEvent.submit(container.querySelector('form'));
+    await waitFor(() => expect(posted.dri.wifi_nan_enabled).toEqual(true));
+  });
+
   test('posts changed values', async () => {
     const { container } = render(<Config />);
     await screen.findByDisplayValue(fixture.wifi.ssid);

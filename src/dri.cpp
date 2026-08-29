@@ -2,6 +2,7 @@
 #include "ble.h"
 #include "dri.h"
 #include "wifi_beacon.h"
+#include "wifi_nan.h"
 
 static ODID_Message_encoded encoded;
 static uint8_t msg_counter = 0;
@@ -16,6 +17,10 @@ static uint8_t wifi_beacon_pack[DRI_PACK_MAX_SIZE];
 static uint8_t wifi_beacon_counter = 0;
 static unsigned long last_wifi_beacon = 0;
 
+static uint8_t wifi_nan_frame[WIFI_NAN_FRAME_MAX_SIZE];
+static uint8_t wifi_nan_counter = 0;
+static unsigned long last_wifi_nan = 0;
+
 bool dri_due(unsigned long last_due, unsigned long now) {
     return now - last_due > DRI_INTERVAL * DRI_GUARD_MULTIPLIER;
 }
@@ -26,6 +31,10 @@ bool dri_pack_due(unsigned long last_due, unsigned long now) {
 
 bool dri_wifi_beacon_due(unsigned long last_due, unsigned long now) {
     return now - last_due > DRI_WIFI_BEACON_INTERVAL;
+}
+
+bool dri_wifi_nan_due(unsigned long last_due, unsigned long now) {
+    return now - last_due > DRI_WIFI_NAN_INTERVAL;
 }
 
 uint8_t dri_counter_next(uint8_t schedule) {
@@ -145,6 +154,8 @@ void dri_init(ODID_UAS_Data *data, unsigned long now) {
     last_pack = now;
     wifi_beacon_counter = 0;
     last_wifi_beacon = now;
+    wifi_nan_counter = 0;
+    last_wifi_nan = now;
 }
 
 void dri_transmit(ODID_UAS_Data *data, unsigned long now) {
@@ -155,6 +166,28 @@ void dri_transmit(ODID_UAS_Data *data, unsigned long now) {
         // refresh rather than register an empty IE.
         if (pack_len > 0)
             wifi_beacon_send_pack(wifi_beacon_counter++, wifi_beacon_pack, pack_len);
+    }
+
+    if (dri_wifi_nan_due(last_wifi_nan, now)) {
+        last_wifi_nan = now;
+        // Every discovery window carries the sync beacon that keeps the NAN
+        // cluster alive for receivers scanning channel 6; it holds no ODID
+        // data and goes out even when the action frame below is skipped.
+        int len = odid_wifi_build_nan_sync_beacon_frame(
+            (const char *)wifi_nan_mac(), wifi_nan_frame, sizeof(wifi_nan_frame));
+        if (len > 0)
+            wifi_nan_send_sync_beacon(wifi_nan_frame, len);
+        // The action frame wraps the same Message Pack the other transports
+        // broadcast; an empty pack (nothing valid) is rejected by the builder,
+        // so the frame is skipped rather than transmitted empty - and the
+        // counter only advances once a frame actually went out.
+        len = odid_wifi_build_message_pack_nan_action_frame(
+            data, (const char *)wifi_nan_mac(), wifi_nan_counter,
+            wifi_nan_frame, sizeof(wifi_nan_frame));
+        if (len > 0) {
+            wifi_nan_send_action_frame(wifi_nan_frame, len);
+            wifi_nan_counter++;
+        }
     }
 
     if (dri_pack_due(last_pack, now)) {

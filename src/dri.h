@@ -23,6 +23,13 @@
 // the SoftAP's own ~100 TU beacon interval repeats the IE between refreshes.
 #define DRI_WIFI_BEACON_INTERVAL 200  // ms between Wi-Fi Beacon IE refreshes
 
+// The Wi-Fi NAN transport transmits a NAN sync beacon plus a Message Pack
+// action frame every NAN discovery window. The window period is 512 ms
+// (16 TU x 32, the NAN spec's cluster timing the reference implementations
+// broadcast on), which keeps the observable Location data inside the 1 s
+// freshness rule.
+#define DRI_WIFI_NAN_INTERVAL 512  // ms between Wi-Fi NAN discovery window broadcasts
+
 #define DRI_UUID 0xFFFA         // ASTM
 #define DRI_APP_CODE 0x0D       // RD
 
@@ -51,6 +58,7 @@ void dri_populate_identity(ODID_UAS_Data *data, const char *ua_id, const char *o
 
 bool dri_pack_due(unsigned long last_due, unsigned long now);
 bool dri_wifi_beacon_due(unsigned long last_due, unsigned long now);
+bool dri_wifi_nan_due(unsigned long last_due, unsigned long now);
 void dri_init(ODID_UAS_Data *data, unsigned long now);
 void dri_transmit(ODID_UAS_Data *data, unsigned long now);
 void dri_update_status(ODID_UAS_Data *data, ODID_status_t status);

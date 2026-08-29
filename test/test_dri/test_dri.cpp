@@ -7,6 +7,7 @@
 #include "dri.h"
 #include "wifi_beacon.h"
 #include "wifi_frame.h"
+#include "wifi_nan.h"
 #include "../support/fixtures.h"
 
 // The reference aircraft the ODID encodings are generated for
@@ -31,6 +32,10 @@ static const double OPERATOR_ALT_GEO = 500.0;
 // the expected ODID output for each message type of the reference aircraft.
 
 static ODID_UAS_Data data;
+
+// The source MAC the Wi-Fi NAN frame tests inject - arbitrary but fixed, so
+// the expected frames can be built against it.
+static const uint8_t WIFI_NAN_MAC[6] = { 0x24, 0x6F, 0x28, 0x10, 0x00, 0x01 };
 
 // Build the reference ODID_UAS_Data exactly as the firmware does on a
 // configured device receiving good telemetry.
@@ -78,6 +83,16 @@ void test_wifi_beacon_due_boundary() {
 void test_wifi_beacon_due_millis_wraparound() {
     TEST_ASSERT_TRUE(dri_wifi_beacon_due(0xFFFFFFF0UL, 0xFFFFFFF0UL + 500UL));
     TEST_ASSERT_FALSE(dri_wifi_beacon_due(0xFFFFFFF0UL, 0xFFFFFFF0UL + 100UL));
+}
+
+void test_wifi_nan_due_boundary() {
+    TEST_ASSERT_FALSE(dri_wifi_nan_due(1000, 1000 + DRI_WIFI_NAN_INTERVAL));
+    TEST_ASSERT_TRUE(dri_wifi_nan_due(1000, 1000 + DRI_WIFI_NAN_INTERVAL + 1));
+}
+
+void test_wifi_nan_due_millis_wraparound() {
+    TEST_ASSERT_TRUE(dri_wifi_nan_due(0xFFFFFFF0UL, 0xFFFFFFF0UL + 600UL));
+    TEST_ASSERT_FALSE(dri_wifi_nan_due(0xFFFFFFF0UL, 0xFFFFFFF0UL + 100UL));
 }
 
 // --- Schedule -------------------------------------------------------------
@@ -580,6 +595,105 @@ void test_transmit_skips_unencodable_wifi_beacon_pack() {
     TEST_ASSERT_EQUAL(0, wifi_beacon_send_count);
 }
 
+// --- Wi-Fi NAN transport (raw 802.11 injection on the SoftAP) ---------------
+
+void test_wifi_nan_on_air_constants() {
+    // The NAN discovery window period (16 TU x 32) and the frame layouts the
+    // vendored builders emit: a 72-byte sync beacon (mgmt header, beacon
+    // fields, vendor IE, master indication + cluster + service id list
+    // attributes) and an action frame of a fixed 51-byte tail around
+    // the message pack.
+    TEST_ASSERT_EQUAL(512, DRI_WIFI_NAN_INTERVAL);
+    TEST_ASSERT_EQUAL(72, 24 + 12 + 6 + 5 + 16 + 9);
+    TEST_ASSERT_EQUAL(51, WIFI_NAN_FRAME_FIXED_SIZE);
+    TEST_ASSERT_EQUAL(51 + DRI_PACK_MAX_SIZE, WIFI_NAN_FRAME_MAX_SIZE);
+}
+
+void test_transmit_wifi_nan_frames_match_vendored_builders() {
+    // The transport injects the vendored encoder's frames verbatim; the
+    // action frame is deterministic, so it must be byte-exact against the
+    // builder called with the same data, MAC and counter.
+    dri_init(&data, 1000);
+    build_reference_data();
+    wifi_nan_send_reset();
+    wifi_nan_init(false, WIFI_NAN_MAC);
+
+    dri_transmit(&data, 1000 + DRI_WIFI_NAN_INTERVAL + 1);
+    TEST_ASSERT_EQUAL(1, wifi_nan_sync_send_count);
+    TEST_ASSERT_EQUAL(1, wifi_nan_action_send_count);
+
+    uint8_t expected[WIFI_NAN_FRAME_MAX_SIZE];
+    int expected_len = odid_wifi_build_message_pack_nan_action_frame(
+        &data, (const char *)WIFI_NAN_MAC, 0, expected, sizeof(expected));
+    TEST_ASSERT_TRUE(expected_len > 0);
+    TEST_ASSERT_EQUAL(expected_len, wifi_nan_action_send_lens[0]);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, wifi_nan_action_send_bytes[0], expected_len);
+
+    // The sync beacon carries a CLOCK_MONOTONIC timestamp (bytes 24-31):
+    // everything around the timestamp is byte-exact against the builder.
+    expected_len = odid_wifi_build_nan_sync_beacon_frame(
+        (const char *)WIFI_NAN_MAC, expected, sizeof(expected));
+    TEST_ASSERT_TRUE(expected_len > 0);
+    TEST_ASSERT_EQUAL(expected_len, wifi_nan_sync_send_lens[0]);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, wifi_nan_sync_send_bytes[0], 24);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected + 32, wifi_nan_sync_send_bytes[0] + 32,
+                                 expected_len - 32);
+}
+
+void test_transmit_wifi_nan_schedule_and_counters() {
+    dri_init(&data, 1000);
+    build_reference_data();
+    wifi_nan_send_reset();
+
+    // Not due until a full DRI_WIFI_NAN_INTERVAL has elapsed; both frame types go
+    // out together every discovery window, the action counter starting at 0.
+    dri_transmit(&data, 1000 + DRI_WIFI_NAN_INTERVAL);
+    TEST_ASSERT_EQUAL(0, wifi_nan_sync_send_count);
+    TEST_ASSERT_EQUAL(0, wifi_nan_action_send_count);
+
+    dri_transmit(&data, 1000 + DRI_WIFI_NAN_INTERVAL + 1);
+    TEST_ASSERT_EQUAL(1, wifi_nan_sync_send_count);
+    TEST_ASSERT_EQUAL(1, wifi_nan_action_send_count);
+    // The action frame's message counter rides the service info byte at
+    // offset 43 (mgmt header + NAN service discovery + service descriptor
+    // attribute).
+    TEST_ASSERT_EQUAL_HEX8(0, wifi_nan_action_send_bytes[0][43]);
+
+    // One clock tick later nothing is due again.
+    dri_transmit(&data, 1000 + DRI_WIFI_NAN_INTERVAL + 2);
+    TEST_ASSERT_EQUAL(1, wifi_nan_sync_send_count);
+
+    // The second discovery window increments the counter, which also rides
+    // the service descriptor extension attribute at the frame's end
+    // (service_update_indicator, the receiver's duplicate detector).
+    dri_transmit(&data, 1000 + 2 * DRI_WIFI_NAN_INTERVAL + 2);
+    TEST_ASSERT_EQUAL(2, wifi_nan_sync_send_count);
+    TEST_ASSERT_EQUAL(2, wifi_nan_action_send_count);
+    TEST_ASSERT_EQUAL_HEX8(1, wifi_nan_action_send_bytes[1][43]);
+    TEST_ASSERT_EQUAL_HEX8(wifi_nan_action_send_bytes[1][43],
+                           wifi_nan_action_send_bytes[1][wifi_nan_action_send_lens[1] - 1]);
+}
+
+void test_transmit_skips_unencodable_wifi_nan_action_frame() {
+    // Out-of-range telemetry leaves nothing encodable: the action frame is
+    // skipped rather than broadcast with an empty pack, while the sync
+    // beacon - which carries no ODID data - still goes out. The counter only
+    // advances on a transmitted frame, so the next good frame reuses 0.
+    dri_init(&data, 1000);
+    data.Location.Direction = 655.35f;  // MAVLink hdg = UINT16_MAX ("unknown")
+    wifi_nan_send_reset();
+
+    dri_transmit(&data, 1000 + DRI_WIFI_NAN_INTERVAL + 1);
+    TEST_ASSERT_EQUAL(1, wifi_nan_sync_send_count);
+    TEST_ASSERT_EQUAL(0, wifi_nan_action_send_count);
+
+    dri_update_location(&data, LAT, LON, ALT_GEO, HEIGHT, INV_DIR);
+    dri_transmit(&data, 1000 + 2 * DRI_WIFI_NAN_INTERVAL + 2);
+    TEST_ASSERT_EQUAL(2, wifi_nan_sync_send_count);
+    TEST_ASSERT_EQUAL(1, wifi_nan_action_send_count);
+    TEST_ASSERT_EQUAL_HEX8(0, wifi_nan_action_send_bytes[0][43]);
+}
+
 // --- Identity population --------------------------------------------------
 
 void test_populate_identity_sets_fields() {
@@ -837,6 +951,8 @@ int main(int, char **) {
     RUN_TEST(test_pack_due_millis_wraparound);
     RUN_TEST(test_wifi_beacon_due_boundary);
     RUN_TEST(test_wifi_beacon_due_millis_wraparound);
+    RUN_TEST(test_wifi_nan_due_boundary);
+    RUN_TEST(test_wifi_nan_due_millis_wraparound);
     RUN_TEST(test_schedule_period_is_25);
     RUN_TEST(test_counter_next_sequence_and_wrap);
     RUN_TEST(test_slot_type_mapping);
@@ -865,6 +981,10 @@ int main(int, char **) {
     RUN_TEST(test_wifi_ie_matches_vendored_beacon_frame);
     RUN_TEST(test_transmit_wifi_beacon_schedule_and_counters);
     RUN_TEST(test_transmit_skips_unencodable_wifi_beacon_pack);
+    RUN_TEST(test_wifi_nan_on_air_constants);
+    RUN_TEST(test_transmit_wifi_nan_frames_match_vendored_builders);
+    RUN_TEST(test_transmit_wifi_nan_schedule_and_counters);
+    RUN_TEST(test_transmit_skips_unencodable_wifi_nan_action_frame);
     RUN_TEST(test_populate_identity_sets_fields);
     RUN_TEST(test_populate_identity_sets_valid_flags);
     RUN_TEST(test_populate_identity_empty_strings_leave_defaults);

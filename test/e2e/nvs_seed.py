@@ -42,6 +42,7 @@ def main():
         # NVS keys are capped at 15 characters, so the stored key is the
         # short form of the API field (config.cpp).
         ["wifi_beacon", "data", "string", "1" if config["dri"]["wifi_beacon_enabled"] else "0"],
+        ["wifi_nan", "data", "string", "1" if config["dri"]["wifi_nan_enabled"] else "0"],
     ]
     csv_path = out_bin + ".csv"
     with open(csv_path, "w", newline="") as f:

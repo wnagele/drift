@@ -201,6 +201,29 @@ class Session:
                     int(gdb.parse_and_eval("millis()")))
         return self.collect_calls("wifi_beacon_send_pack", read, until)
 
+    def wifi_nan_sync_sends(self, until):
+        """Record every wifi_nan_send_sync_beacon() call as (frame bytes,
+        length, millis()), same a0/a1 mechanism as ble_sends() at the Wi-Fi
+        NAN sync beacon stub's entry."""
+        def read():
+            frame = int(gdb.parse_and_eval("$a0"))
+            length = int(gdb.parse_and_eval("$a1"))
+            return (bytes(gdb.selected_inferior().read_memory(frame, length)),
+                    length,
+                    int(gdb.parse_and_eval("millis()")))
+        return self.collect_calls("wifi_nan_send_sync_beacon", read, until)
+
+    def wifi_nan_action_sends(self, until):
+        """Record every wifi_nan_send_action_frame() call as (frame bytes,
+        length, millis()), same mechanism as wifi_nan_sync_sends()."""
+        def read():
+            frame = int(gdb.parse_and_eval("$a0"))
+            length = int(gdb.parse_and_eval("$a1"))
+            return (bytes(gdb.selected_inferior().read_memory(frame, length)),
+                    length,
+                    int(gdb.parse_and_eval("millis()")))
+        return self.collect_calls("wifi_nan_send_action_frame", read, until)
+
     def _connect_serial(self):
         deadline = time.time() + 30
         while time.time() < deadline:
