@@ -7,6 +7,7 @@
 #include "net.h"
 #include "status.h"
 #include "utils.h"
+#include "wifi_beacon.h"
 
 Scheduler scheduler;
 
@@ -35,6 +36,7 @@ void setup() {
 
     ble_init(config_wifi_ssid().c_str());
     ble5_init(config_bt5_enabled());
+    wifi_beacon_init(config_wifi_beacon_enabled());
 
     mavlink_init(&mavlink_state);
 

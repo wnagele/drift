@@ -5,6 +5,8 @@
 #include "ble.h"
 #include "ble_frame.h"
 #include "dri.h"
+#include "wifi_beacon.h"
+#include "wifi_frame.h"
 #include "../support/fixtures.h"
 
 // The reference aircraft the ODID encodings are generated for
@@ -66,6 +68,16 @@ void test_pack_due_millis_wraparound() {
     // subtraction wraps the same way on 32- and 64-bit builds.
     TEST_ASSERT_TRUE(dri_pack_due(0xFFFFFFF0UL, 0xFFFFFFF0UL + 2000UL));
     TEST_ASSERT_FALSE(dri_pack_due(0xFFFFFFF0UL, 0xFFFFFFF0UL + 500UL));
+}
+
+void test_wifi_beacon_due_boundary() {
+    TEST_ASSERT_FALSE(dri_wifi_beacon_due(1000, 1000 + DRI_WIFI_BEACON_INTERVAL));
+    TEST_ASSERT_TRUE(dri_wifi_beacon_due(1000, 1000 + DRI_WIFI_BEACON_INTERVAL + 1));
+}
+
+void test_wifi_beacon_due_millis_wraparound() {
+    TEST_ASSERT_TRUE(dri_wifi_beacon_due(0xFFFFFFF0UL, 0xFFFFFFF0UL + 500UL));
+    TEST_ASSERT_FALSE(dri_wifi_beacon_due(0xFFFFFFF0UL, 0xFFFFFFF0UL + 100UL));
 }
 
 // --- Schedule -------------------------------------------------------------
@@ -419,6 +431,155 @@ void test_ble5_adv_interval_constants() {
     TEST_ASSERT_EQUAL_UINT32(1200, BLE5_ADV_INTERVAL_MIN);
 }
 
+// --- Wi-Fi Beacon transport (vendor IE on the SoftAP) -----------------------
+
+void test_wifi_ie_on_air_constants() {
+    // What the ESP32 body puts on the air: a Vendor-Specific Information
+    // Element (element id 221) under the ASD-STAN OUI FA:0B:BC with OUI type
+    // 0x0D, sized to carry a counter plus a full message pack. Both live in
+    // the platform-neutral seam, so they are pinnable natively.
+    TEST_ASSERT_EQUAL_HEX8(0xDD, WIFI_IE_ELEMENT_ID);
+    TEST_ASSERT_EQUAL_HEX8(0x0D, WIFI_IE_ODID_OUI_TYPE);
+    TEST_ASSERT_EQUAL(7 + DRI_PACK_MAX_SIZE, WIFI_IE_MAX_SIZE);
+}
+
+void test_wifi_ie_bytes() {
+    build_reference_data();
+    uint8_t pack[DRI_PACK_MAX_SIZE];
+    int pack_len = dri_build_pack(&data, pack, sizeof(pack));
+    TEST_ASSERT_TRUE(pack_len > 0);
+
+    uint8_t ie[WIFI_IE_MAX_SIZE + 2];
+    memset(ie, 0xAA, sizeof(ie));
+    size_t len = wifi_frame_build_vendor_ie(0x2A, pack, pack_len, ie, sizeof(ie));
+
+    // Vendor IE: [0xDD][length][FA 0B BC][0x0D][counter][pack], where length
+    // counts every byte after the length field (OUI + OUI type + payload).
+    TEST_ASSERT_EQUAL((size_t)pack_len + 7, len);
+    TEST_ASSERT_EQUAL_HEX8(0xDD, ie[0]);
+    TEST_ASSERT_EQUAL_HEX8(4 + 1 + pack_len, ie[1]);
+    TEST_ASSERT_EQUAL_HEX8(0xFA, ie[2]);
+    TEST_ASSERT_EQUAL_HEX8(0x0B, ie[3]);
+    TEST_ASSERT_EQUAL_HEX8(0xBC, ie[4]);
+    TEST_ASSERT_EQUAL_HEX8(0x0D, ie[5]);
+    TEST_ASSERT_EQUAL_HEX8(0x2A, ie[6]);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(pack, ie + 7, pack_len);
+    TEST_ASSERT_EQUAL_HEX8(0xAA, ie[pack_len + 7]);  // nothing past the IE
+}
+
+void test_wifi_ie_full_payload() {
+    // Same no-zero-byte discipline as the BLE AD tests: a pack with no zero
+    // bytes catches a truncated copy through the non-zero tail, and the
+    // 0xAA-prefilled oversized buffer catches an overrun past the IE.
+    uint8_t pack[3 + 2 * ODID_MESSAGE_SIZE];
+    for (size_t i = 0; i < sizeof(pack); i++)
+        pack[i] = (uint8_t)(0xE0 + (i % 16));
+
+    uint8_t ie[WIFI_IE_MAX_SIZE + 2];
+    memset(ie, 0xAA, sizeof(ie));
+    size_t len = wifi_frame_build_vendor_ie(0x01, pack, sizeof(pack), ie, sizeof(ie));
+
+    TEST_ASSERT_EQUAL(sizeof(pack) + 7, len);
+    TEST_ASSERT_EQUAL_HEX8(pack[sizeof(pack) - 1], ie[len - 1]);
+    TEST_ASSERT_EQUAL_HEX8(0xAA, ie[len]);
+}
+
+void test_wifi_ie_rejects_bad_input() {
+    uint8_t pack[DRI_PACK_MAX_SIZE];
+    memset(pack, 0x55, sizeof(pack));
+    uint8_t ie[WIFI_IE_MAX_SIZE];
+
+    TEST_ASSERT_EQUAL(0, wifi_frame_build_vendor_ie(0, pack, 0, ie, sizeof(ie)));
+    TEST_ASSERT_EQUAL(0, wifi_frame_build_vendor_ie(0, pack, DRI_PACK_MAX_SIZE + 1, ie, sizeof(ie)));
+    TEST_ASSERT_EQUAL(0, wifi_frame_build_vendor_ie(0, pack, DRI_PACK_MAX_SIZE, ie, DRI_PACK_MAX_SIZE));
+}
+
+void test_wifi_ie_matches_vendored_beacon_frame() {
+    // Cross-validation against the reference encoder: the vendor IE the
+    // vendored odid_wifi_build_message_pack_beacon_frame() embeds in a
+    // beacon frame must be byte-identical to wifi_frame_build_vendor_ie()
+    // output, so DRIFT's IE cannot drift from the reference implementation.
+    build_reference_data();
+    uint8_t pack[DRI_PACK_MAX_SIZE];
+    int pack_len = dri_build_pack(&data, pack, sizeof(pack));
+    TEST_ASSERT_TRUE(pack_len > 0);
+
+    uint8_t mac[6] = { 0x24, 0x6F, 0x28, 0x10, 0x00, 0x01 };
+    uint8_t frame[512];
+    int frame_len = odid_wifi_build_message_pack_beacon_frame(
+        &data, (const char *)mac, "DRIFT", 5, 100, 0x2A, frame, sizeof(frame));
+    TEST_ASSERT_TRUE(frame_len > 0);
+
+    // Locate the vendor IE inside the beacon frame: the first element id
+    // 0xDD followed by the ASD-STAN OUI and OUI type (the SSID and rates
+    // IEs ahead of it are ASCII and fixed bytes, so no false positive).
+    int offset = -1;
+    for (int i = 0; i + 6 < frame_len; i++) {
+        if (frame[i] == 0xDD && frame[i + 2] == 0xFA && frame[i + 3] == 0x0B
+            && frame[i + 4] == 0xBC && frame[i + 5] == 0x0D) {
+            offset = i;
+            break;
+        }
+    }
+    TEST_ASSERT_TRUE(offset >= 0);
+
+    // The IE is the frame's last element: its own length byte must account
+    // for exactly the bytes to the end of the frame.
+    TEST_ASSERT_EQUAL(frame_len - offset - 2, frame[offset + 1]);
+
+    uint8_t ie[WIFI_IE_MAX_SIZE];
+    size_t ie_len = wifi_frame_build_vendor_ie(0x2A, pack, pack_len, ie, sizeof(ie));
+    TEST_ASSERT_EQUAL((size_t)(frame_len - offset), ie_len);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(frame + offset, ie, ie_len);
+}
+
+void test_transmit_wifi_beacon_schedule_and_counters() {
+    dri_init(&data, 1000);
+    build_reference_data();
+    ble_send_reset();
+    wifi_beacon_send_reset();
+
+    // Not due until a full DRI_WIFI_BEACON_INTERVAL has elapsed; the Wi-Fi
+    // beacon counter starts at 0.
+    dri_transmit(&data, 1000 + DRI_WIFI_BEACON_INTERVAL);
+    TEST_ASSERT_EQUAL(0, wifi_beacon_send_count);
+
+    dri_transmit(&data, 1000 + DRI_WIFI_BEACON_INTERVAL + 1);
+    TEST_ASSERT_EQUAL(1, wifi_beacon_send_count);
+    TEST_ASSERT_EQUAL(0, wifi_beacon_send_counters[0]);
+    TEST_ASSERT_EQUAL(3 + 5 * ODID_MESSAGE_SIZE, wifi_beacon_send_lens[0]);
+    TEST_ASSERT_EQUAL_HEX8(0xF2, wifi_beacon_send_bytes[0][0]);
+
+    // The Wi-Fi beacon cadence is independent of the BT5 pack schedule: one
+    // clock tick past both intervals each transport fires with its own
+    // counter.
+    dri_transmit(&data, 1000 + DRI_PACK_INTERVAL + 1);
+    TEST_ASSERT_EQUAL(2, wifi_beacon_send_count);
+    TEST_ASSERT_EQUAL(1, wifi_beacon_send_counters[1]);
+    TEST_ASSERT_EQUAL(1, ble_pack_send_count);
+    TEST_ASSERT_EQUAL(0, ble_pack_send_counters[0]);
+
+    dri_transmit(&data, 1000 + DRI_PACK_INTERVAL + DRI_WIFI_BEACON_INTERVAL + 2);
+    TEST_ASSERT_EQUAL(3, wifi_beacon_send_count);
+    TEST_ASSERT_EQUAL(2, wifi_beacon_send_counters[2]);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(wifi_beacon_send_bytes[0], wifi_beacon_send_bytes[2],
+                                 wifi_beacon_send_lens[0]);
+}
+
+void test_transmit_skips_unencodable_wifi_beacon_pack() {
+    // Same rejection as the BT5 pack: out-of-range telemetry on an otherwise
+    // unconfigured aircraft leaves nothing valid to encode, the pack comes
+    // back empty and the Wi-Fi Beacon IE must stay unregistered rather than
+    // go out empty.
+    dri_init(&data, 1000);
+    data.Location.Direction = 655.35f;  // MAVLink hdg = UINT16_MAX ("unknown")
+    ble_send_reset();
+    wifi_beacon_send_reset();
+
+    dri_transmit(&data, 1000 + DRI_WIFI_BEACON_INTERVAL + 1);
+    TEST_ASSERT_EQUAL(0, wifi_beacon_send_count);
+}
+
 // --- Identity population --------------------------------------------------
 
 void test_populate_identity_sets_fields() {
@@ -674,6 +835,8 @@ int main(int, char **) {
     RUN_TEST(test_due_millis_wraparound);
     RUN_TEST(test_pack_due_boundary);
     RUN_TEST(test_pack_due_millis_wraparound);
+    RUN_TEST(test_wifi_beacon_due_boundary);
+    RUN_TEST(test_wifi_beacon_due_millis_wraparound);
     RUN_TEST(test_schedule_period_is_25);
     RUN_TEST(test_counter_next_sequence_and_wrap);
     RUN_TEST(test_slot_type_mapping);
@@ -695,6 +858,13 @@ int main(int, char **) {
     RUN_TEST(test_bt5_ad_full_payload);
     RUN_TEST(test_bt5_ad_rejects_bad_input);
     RUN_TEST(test_ble5_adv_interval_constants);
+    RUN_TEST(test_wifi_ie_on_air_constants);
+    RUN_TEST(test_wifi_ie_bytes);
+    RUN_TEST(test_wifi_ie_full_payload);
+    RUN_TEST(test_wifi_ie_rejects_bad_input);
+    RUN_TEST(test_wifi_ie_matches_vendored_beacon_frame);
+    RUN_TEST(test_transmit_wifi_beacon_schedule_and_counters);
+    RUN_TEST(test_transmit_skips_unencodable_wifi_beacon_pack);
     RUN_TEST(test_populate_identity_sets_fields);
     RUN_TEST(test_populate_identity_sets_valid_flags);
     RUN_TEST(test_populate_identity_empty_strings_leave_defaults);

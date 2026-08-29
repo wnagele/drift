@@ -8,6 +8,10 @@
 #define KEY_DRI_UA_DESC "dri_ua_desc"
 #define KEY_DRI_OP_ID "dri_op_id"
 #define KEY_BT5_ENABLED "bt5_enabled"
+// NVS keys are capped at 15 characters (Preferences, nvs_partition_gen), so
+// the stored key is the transport's short form; the API field is
+// wifi_beacon_enabled.
+#define KEY_WIFI_BEACON "wifi_beacon"
 
 static const ConfigStorage *storage;
 
@@ -27,6 +31,11 @@ void config_init(const ConfigStorage *storage_backend, const String &default_ssi
     // BT5 alongside BT4.
     if (!storage->isKey(KEY_BT5_ENABLED))
         storage->putString(KEY_BT5_ENABLED, "1");
+    // The Wi-Fi Beacon IE rides on the SoftAP beacons that go out anyway,
+    // and the EU profile's default set is BT4 + BT5 + Wi-Fi Beacon, so it too
+    // defaults to on.
+    if (!storage->isKey(KEY_WIFI_BEACON))
+        storage->putString(KEY_WIFI_BEACON, "1");
 }
 
 String config_get() {
@@ -37,6 +46,7 @@ String config_get() {
     doc["dri"]["ua_desc"] = config_dri_ua_desc();
     doc["dri"]["op_id"] = config_dri_op_id();
     doc["dri"]["bt5_enabled"] = config_bt5_enabled();
+    doc["dri"]["wifi_beacon_enabled"] = config_wifi_beacon_enabled();
     String buf;
     serializeJson(doc, buf);
     return buf;
@@ -63,6 +73,8 @@ void config_save(String data) {
     // non-boolean values keep the default (on).
     bool bt5_enabled = doc["dri"]["bt5_enabled"] | true;
     storage->putString(KEY_BT5_ENABLED, bt5_enabled ? "1" : "0");
+    bool wifi_beacon_enabled = doc["dri"]["wifi_beacon_enabled"] | true;
+    storage->putString(KEY_WIFI_BEACON, wifi_beacon_enabled ? "1" : "0");
 }
 
 String config_wifi_ssid() {
@@ -89,4 +101,8 @@ String config_dri_op_id() {
 // persists strings; the e2e NVS seed writes the same encoding).
 bool config_bt5_enabled() {
     return storage->getString(KEY_BT5_ENABLED) != "0";
+}
+
+bool config_wifi_beacon_enabled() {
+    return storage->getString(KEY_WIFI_BEACON) != "0";
 }
