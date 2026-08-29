@@ -30,21 +30,63 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('status display reflects websocket status messages', async ({ page }) => {
+test('connection box and status view reflect websocket status messages', async ({ page }) => {
   await page.routeWebSocket('**/ws', (ws) => {
     // Push the recorded device status once the app connects.
     setTimeout(() => ws.send(JSON.stringify(statusFixture)), 100);
   });
 
   await page.goto('/');
-  // Per-row assertions: the fixture is asymmetric (telemetry up, gnss down),
-  // so a telemetry/gnss swap anywhere fails loudly instead of cancelling out.
+  // Sidebar connection box: green while the stream flows, with the age of
+  // the most recent update.
+  const box = page.locator('.status-box');
+  await expect(box).toHaveClass(/status-box-ok/);
+  await expect(box).toContainText('Connected');
+  await expect(box.locator('.status-box-detail')).toContainText(/updated \d+s ago/);
+  // Status view (default tab) carries the flags only — no connection row.
   const telemetryRow = page.locator('.ant-row', { hasText: 'Telemetry' });
   const gnssRow = page.locator('.ant-row', { hasText: 'GNSS' });
+  await expect(page.locator('.ant-row', { hasText: 'Connection' })).toHaveCount(0);
+  // The fixture is asymmetric (telemetry up, gnss down), so a telemetry/gnss
+  // swap anywhere fails loudly instead of cancelling out.
   await expect(telemetryRow.locator('.anticon-check-circle')).toBeVisible();
   await expect(telemetryRow.locator('.anticon-close-circle')).toHaveCount(0);
   await expect(gnssRow.locator('.anticon-close-circle')).toBeVisible();
   await expect(gnssRow.locator('.anticon-check-circle')).toHaveCount(0);
+  // GNSS being down degrades the flags, not the connection box.
+  await expect(box).not.toHaveClass(/status-box-degraded/);
+});
+
+test('connection box flags a silent websocket as no-data', async ({ page }) => {
+  // The mocked socket accepts the connection but never delivers a status
+  // message: the box must show No data right away (no green grace period —
+  // no message yet IS no data) and stay there.
+  await page.routeWebSocket('**/ws', (ws) => {});
+
+  await page.goto('/');
+  const box = page.locator('.status-box');
+  await expect(box).toContainText('No data');
+  await expect(box).toHaveClass(/status-box-degraded/);
+  await expect(box.locator('.status-box-detail')).toContainText('no message yet');
+  await expect(box.locator('.status-dot-ok')).toHaveCount(0);
+  // And it stays no-data — nothing arrived to clear it.
+  await page.waitForTimeout(3000);
+  await expect(box).toContainText('No data');
+  await expect(box).toHaveClass(/status-box-degraded/);
+});
+
+test('connection box shows disconnection with its age', async ({ page }) => {
+  // The mocked socket closes right after connecting: red box, Disconnected,
+  // and the detail line reporting for how long.
+  await page.routeWebSocket('**/ws', (ws) => {
+    setTimeout(() => ws.close(), 100);
+  });
+
+  await page.goto('/');
+  const box = page.locator('.status-box');
+  await expect(box).toContainText('Disconnected');
+  await expect(box).toHaveClass(/status-box-down/);
+  await expect(box.locator('.status-box-detail')).toContainText(/since \d+s ago/);
 });
 
 test('config save flow posts the edited config to the API', async ({ page }) => {

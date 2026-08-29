@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { Col, Row, message } from 'antd';
+import React from 'react';
+import { Col, Row } from 'antd';
 import { CheckCircleTwoTone, CloseCircleTwoTone, QuestionCircleTwoTone } from '@ant-design/icons';
 
-const Status = () => {
+// Status view: the telemetry/GNSS flags from the latest status message.
+// Presentational — the /ws connection is owned by useStatusSocket in App
+// and displayed in the sidebar ConnectionBox, so it stays visible from
+// every tab; this view carries what the device is reporting.
+const Status = ({ telemetryState, gnssState }) => {
   const renderStatus = (state) => {
     switch (state) {
       case true:
@@ -13,39 +17,6 @@ const Status = () => {
         return <QuestionCircleTwoTone twoToneColor='#e36b3b' />;
     }
   };
-
-  const [telemetryState, setTelemetryState] = useState(null);
-  const [gnssState, setGnssState] = useState(null);
-
-  useEffect(() => {
-    const url = 'ws://' + window.location.host + '/ws';
-    const websocket = new WebSocket(url);
-    var shuttingDown = false;
-
-    websocket.onerror = (err) => {
-      if (shuttingDown)
-        return;
-      console.error('WebSocket error: ', err);
-      message.error('Connection error occured');
-    };
-
-    websocket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'status') {
-          setTelemetryState(data.telemetry);
-          setGnssState(data.gnss);
-        }
-      } catch (err) {
-        console.error('Invalid message: ', event.data);
-      }
-    };
-
-    return () => {
-      shuttingDown = true;
-      websocket.close()
-    };
-  }, []);
 
   return (
     <>

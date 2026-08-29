@@ -31,3 +31,44 @@ body,
 .ant-col {
     padding: 5px;
 }
+
+/* Status box in the left navigation: background tint + border carry the
+ * overall health (worst of connection / telemetry / GNSS); the leading dot
+ * on the connection line carries that row's own state. Colors match antd's
+ * palette (green #52c41a, gold #faad14, red #f5222d). */
+.status-box {
+    margin: 0 10px 12px 10px;
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 12px;
+    line-height: 1.7;
+}
+.status-box-ok       { background: rgba(82, 196, 26, 0.15);  border-color: rgba(82, 196, 26, 0.6); }
+.status-box-degraded { background: rgba(250, 173, 20, 0.15); border-color: rgba(250, 173, 20, 0.6); }
+.status-box-down     { background: rgba(245, 34, 45, 0.18);  border-color: rgba(245, 34, 45, 0.6); }
+.status-box-detail {
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 11px;
+    padding-left: 14px;   /* align under the state word, past the dot */
+}
+.status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+.status-dot-ok       { background: #52c41a; }
+.status-dot-degraded { background: #faad14; }
+.status-dot-down     { background: #f5222d; }
+
+/* Collapsed sider (small screens): the box shrinks to a single dot of the
+ * overall color; the native tooltip carries the details. */
+.status-box-collapsed {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin: 12px auto 12px auto;
+}
