@@ -116,12 +116,17 @@ describe('App build info precedence', () => {
 
     // The connection box lives in the sider, visible from every tab…
     expect(container.querySelector('.status-box')).not.toBeNull();
-    // …and both tabs exist, with exactly one websocket for the whole app.
+    // …and all three tabs exist, with exactly one websocket for the whole app.
     expect(screen.queryByRole('menuitem', { name: /status/i })).not.toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /statistics/i })).not.toBeNull();
     expect(screen.queryByRole('menuitem', { name: /config/i })).not.toBeNull();
     expect(MockWebSocket.instances).toHaveLength(1);
     expect(MockWebSocket.instances[0].url).toBe('ws://' + window.location.host + '/ws');
 
+    act(() => {
+      fireEvent.click(screen.getByRole('menuitem', { name: /statistics/i }));
+    });
+    expect(MockWebSocket.instances).toHaveLength(1);
     act(() => {
       fireEvent.click(screen.getByRole('menuitem', { name: /config/i }));
     });

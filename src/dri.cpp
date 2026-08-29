@@ -1,6 +1,7 @@
 #include <string.h>
 #include "ble.h"
 #include "dri.h"
+#include "txcount.h"
 #include "wifi_beacon.h"
 #include "wifi_nan.h"
 
@@ -172,8 +173,10 @@ void dri_transmit(ODID_UAS_Data *data, unsigned long now) {
         int pack_len = dri_build_pack(data, wifi_beacon_pack, sizeof(wifi_beacon_pack));
         // An empty pack (nothing valid) is rejected by the builder: skip the
         // refresh rather than register an empty IE.
-        if (pack_len > 0)
+        if (pack_len > 0) {
             wifi_beacon_send_pack(wifi_beacon_counter++, wifi_beacon_pack, pack_len);
+            txcount_beacon((size_t)pack_len);
+        }
     }
 
     if (dri_wifi_nan_due(last_wifi_nan, now)) {
@@ -189,12 +192,20 @@ void dri_transmit(ODID_UAS_Data *data, unsigned long now) {
         // broadcast; an empty pack (nothing valid) is rejected by the builder,
         // so the frame is skipped rather than transmitted empty - and the
         // counter only advances once a frame actually went out.
+        // The pack is rebuilt into the BT5 buffer purely to count its
+        // messages for the transmit diagnostics (the vendored builder is the
+        // authority on which messages are valid); the BT5 block below
+        // rebuilds that buffer in full before its own send, so sharing it is
+        // safe even if the block order ever changes.
+        int msg_count_len = dri_build_pack(data, pack, sizeof(pack));
         len = odid_wifi_build_message_pack_nan_action_frame(
             data, (const char *)wifi_nan_mac(), wifi_nan_counter,
             wifi_nan_frame, sizeof(wifi_nan_frame));
         if (len > 0) {
             wifi_nan_send_action_frame(wifi_nan_frame, len);
             wifi_nan_counter++;
+            if (msg_count_len > 0)
+                txcount_nan((size_t)msg_count_len);
         }
     }
 
@@ -203,8 +214,10 @@ void dri_transmit(ODID_UAS_Data *data, unsigned long now) {
         int pack_len = dri_build_pack(data, pack, sizeof(pack));
         // An empty pack (nothing valid) is rejected by the builder: skip the
         // slot rather than broadcast an empty advertisement.
-        if (pack_len > 0)
+        if (pack_len > 0) {
             ble_send_pack(pack_counter++, pack, pack_len);
+            txcount_bt5((size_t)pack_len);
+        }
     }
 
     if (!dri_due(last, now))
@@ -215,6 +228,7 @@ void dri_transmit(ODID_UAS_Data *data, unsigned long now) {
     if (!dri_encode_slot(data, schedule_counter, &encoded))
         return;  // encoder rejected the data: skip the slot rather than broadcast an empty message
     ble_send(msg_counter++, &encoded);
+    txcount_bt4();
 }
 
 void dri_update_status(ODID_UAS_Data *data, ODID_status_t status) {

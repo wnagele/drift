@@ -63,6 +63,23 @@ describe('useStatusSocket', () => {
     expect(result.current.msgAgeMs).not.toBeNull();
     expect(result.current.telemetryState).toBe(fixture.telemetry);
     expect(result.current.gnssState).toBe(fixture.gnss);
+    expect(result.current.txState).toEqual(fixture.tx);
+  });
+
+  test('exposes the transmit rates only once the payload carries them', () => {
+    const { result } = renderHook(() => useStatusSocket());
+    const ws = MockWebSocket.instances[0];
+    expect(result.current.txState).toBeNull();
+    act(() => {
+      ws.onopen();
+      // Older firmware: status message without the tx diagnostics.
+      ws.onmessage({ data: JSON.stringify({ type: 'status', telemetry: true, gnss: false }) });
+    });
+    expect(result.current.txState).toBeNull();
+    act(() => {
+      ws.onmessage({ data: JSON.stringify(fixture) });
+    });
+    expect(result.current.txState).toEqual(fixture.tx);
   });
 
   test('ignores junk and non-status messages, then still updates', () => {
