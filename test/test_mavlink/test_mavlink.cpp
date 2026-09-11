@@ -47,12 +47,15 @@ void test_disarmed_fix_stream() {
     TEST_ASSERT_EQUAL(473566000, state.gps_raw_int.lat);           // 47.3566 deg
     TEST_ASSERT_EQUAL(85321000, state.gps_raw_int.lon);            // 8.5321 deg
     TEST_ASSERT_EQUAL(500000, state.gps_raw_int.alt);              // 500 m
+    TEST_ASSERT_EQUAL(9000, state.gps_raw_int.cog);                // 90 deg course
 
     TEST_ASSERT_EQUAL(473566123, state.global_position_int.lat);
     TEST_ASSERT_EQUAL(85321456, state.global_position_int.lon);
     TEST_ASSERT_EQUAL(500500, state.global_position_int.alt);      // 500.5 m
     TEST_ASSERT_EQUAL(30500, state.global_position_int.relative_alt);  // 30.5 m
-    TEST_ASSERT_EQUAL(9000, state.global_position_int.hdg);        // 90 deg
+    // Yaw, deliberately 180 deg against the 90 deg course: ODID's Direction
+    // is the course, so the two must not be interchangeable in a fixture.
+    TEST_ASSERT_EQUAL(18000, state.global_position_int.hdg);       // 180 deg yaw
 
     TEST_ASSERT_EQUAL(MAV_STATE_STANDBY, state.heartbeat.system_status);
 }
@@ -83,17 +86,20 @@ void test_armed_fix_stream() {
     TEST_ASSERT_EQUAL(3, state.gps_raw_int.fix_type);              // 3D fix
     TEST_ASSERT_EQUAL(MAV_STATE_ACTIVE, state.heartbeat.system_status);
     TEST_ASSERT_EQUAL(MAV_MODE_FLAG_SAFETY_ARMED, state.heartbeat.base_mode);
+    TEST_ASSERT_EQUAL(9000, state.gps_raw_int.cog);                // 90 deg course
     TEST_ASSERT_EQUAL(473566123, state.global_position_int.lat);
     TEST_ASSERT_EQUAL(85321456, state.global_position_int.lon);
     TEST_ASSERT_EQUAL(500500, state.global_position_int.alt);      // 500.5 m
     TEST_ASSERT_EQUAL(30500, state.global_position_int.relative_alt);  // 30.5 m
-    TEST_ASSERT_EQUAL(9000, state.global_position_int.hdg);        // 90 deg
+    TEST_ASSERT_EQUAL(18000, state.global_position_int.hdg);       // 180 deg yaw
 }
 
 void test_armed_unknown_stream() {
-    // Heading "unknown" (hdg = UINT16_MAX, the MAVLink sentinel) and
+    // Course "unknown" (cog = UINT16_MAX, the MAVLink sentinel) and
     // altitudes near INT32_MAX (mm): decodable values that have no ODID
-    // representation. main.cpp maps them to the ODID unknown sentinels.
+    // representation. main.cpp maps them to the ODID unknown sentinels. The
+    // heading is a valid 180 deg, so reading yaw instead of course would
+    // broadcast a plausible direction rather than "unknown".
     mavlink_type_t seen[8];
     size_t count = feed(capture("armed_unknown"), seen, 8);
 
@@ -104,7 +110,8 @@ void test_armed_unknown_stream() {
 
     TEST_ASSERT_EQUAL(3, state.gps_raw_int.fix_type);              // 3D fix
     TEST_ASSERT_EQUAL(MAV_STATE_ACTIVE, state.heartbeat.system_status);
-    TEST_ASSERT_EQUAL(UINT16_MAX, state.global_position_int.hdg);  // unknown
+    TEST_ASSERT_EQUAL(UINT16_MAX, state.gps_raw_int.cog);          // course unknown
+    TEST_ASSERT_EQUAL(18000, state.global_position_int.hdg);       // yaw known, ignored
     TEST_ASSERT_EQUAL(INT32_MAX, state.global_position_int.alt);
     TEST_ASSERT_EQUAL(INT32_MAX, state.global_position_int.relative_alt);
 }

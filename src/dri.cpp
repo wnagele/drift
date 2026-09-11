@@ -241,14 +241,14 @@ void dri_update_location(
     double lon,
     double alt,
     double rel_alt,
-    float hdg
+    float direction
 ) {
     data->Location.Latitude = lat;
     data->Location.Longitude = lon;
     data->Location.AltitudeGeo = alt;
     data->Location.HeightType = ODID_HEIGHT_REF_OVER_TAKEOFF;
     data->Location.Height = rel_alt;
-    data->Location.Direction = hdg;
+    data->Location.Direction = direction;
     data->LocationValid = 1;
 }
 
