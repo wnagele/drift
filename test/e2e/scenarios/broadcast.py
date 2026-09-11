@@ -93,6 +93,10 @@ def wifi_nan_sync_beacon(mac):
 def broadcast(t):
     # Arm the aircraft with good telemetry, matching the reference aircraft
     # the ODID fixtures encode (full location incl. height and direction).
+    # The fixture's course over ground (90 deg) and yaw (180 deg) differ, so
+    # the byte-exact location comparison below also pins Direction to the
+    # course: reading GLOBAL_POSITION_INT.hdg instead would encode 180 deg
+    # and fail the comparison.
     t.replay("armed_fix")
     t.run_to("dri_update_location")       # GLOBAL_POSITION_INT, the last message in the fixture
 

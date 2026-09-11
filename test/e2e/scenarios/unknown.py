@@ -3,15 +3,19 @@ from harness import scenario
 from scenarios.broadcast import CYCLE_LENGTH, cycle_of, full_cycle
 
 
-@scenario("telemetry: unknown heading and out-of-range altitudes are reported as unknown")
+@scenario("telemetry: unknown course and out-of-range altitudes are reported as unknown")
 def unknown_telemetry(t):
-    # MAVLink defines hdg = UINT16_MAX as "heading unknown"; altitudes near
+    # MAVLink defines cog = UINT16_MAX as "course unknown"; altitudes near
     # INT32_MAX (mm) have no ODID representation. The range guards in
     # main.cpp must map these to the ODID unknown sentinels (INV_DIR /
-    # INV_ALT) - before them, hdg became 655.35 deg, the encoder rejected
-    # the location data, and every location slot broadcast an all-zero
-    # message while armed (the hdg-centidegrees bug's failure mode, still
-    # live at the time of the review).
+    # INV_ALT) - before them, the direction became 655.35 deg, the encoder
+    # rejected the location data, and every location slot broadcast an
+    # all-zero message while armed (the centidegrees bug's failure mode,
+    # still live at the time of the review).
+    #
+    # The fixture's heading is a valid 180 deg while the course is unknown,
+    # so a regression back to GLOBAL_POSITION_INT.hdg would broadcast a
+    # plausible 180 deg here instead of failing.
     t.replay("armed_unknown")
     t.run_to("dri_update_location")
 

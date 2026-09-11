@@ -70,13 +70,15 @@ bool dri_wifi_nan_due(unsigned long last_due, unsigned long now);
 void dri_init(ODID_UAS_Data *data, unsigned long now);
 void dri_transmit(ODID_UAS_Data *data, unsigned long now);
 void dri_update_status(ODID_UAS_Data *data, ODID_status_t status);
+// `direction` is the course over ground (track) in degrees from true North,
+// not the airframe's yaw - see ODID_Location_data.Direction.
 void dri_update_location(
     ODID_UAS_Data *data,
     double latitude,
     double longitude,
     double alt,
     double relative_alt,
-    float heading
+    float direction
 );
 void dri_update_operator(
     ODID_UAS_Data *data,

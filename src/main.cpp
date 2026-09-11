@@ -97,14 +97,19 @@ void loop() {
             if (!gps_fix)
                 break;
             float relative_alt = INV_ALT;
-            float hdg = INV_DIR;
+            float direction = INV_DIR;
             if (armed) {
                 relative_alt = mavlink_state.global_position_int.relative_alt / (float)1000;
                 if (relative_alt < MIN_ALT || relative_alt > MAX_ALT)
                     relative_alt = INV_ALT;   // out of ODID range: report "unknown"
-                hdg = mavlink_state.global_position_int.hdg / (float)100;
-                if (hdg > MAX_DIR)
-                    hdg = INV_DIR;            // incl. MAVLink's UINT16_MAX "heading unknown"
+                // ASTM F3411's Direction is the route course over ground, not
+                // the airframe's yaw: GPS_RAW_INT.cog, not
+                // GLOBAL_POSITION_INT.hdg. A hovering or sideways-drifting
+                // aircraft points somewhere other than where it travels, and
+                // a receiver plotting yaw as track draws the wrong path.
+                direction = mavlink_state.gps_raw_int.cog / (float)100;
+                if (direction > MAX_DIR)
+                    direction = INV_DIR;      // incl. MAVLink's UINT16_MAX "course unknown"
             }
             float alt = mavlink_state.global_position_int.alt / (float)1000;
             if (alt < MIN_ALT || alt > MAX_ALT)
@@ -115,7 +120,7 @@ void loop() {
                 mavlink_state.global_position_int.lon / (double)10000000,
                 alt,
                 relative_alt,
-                hdg
+                direction
             );
             status_gnss_rcvd();
             break;

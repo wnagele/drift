@@ -18,11 +18,19 @@
 #define A_GPS_LAT 473566000
 #define A_GPS_LON 85321000
 #define A_GPS_ALT 500000
+#define A_GPS_VEL 350
+// Course over ground: what ODID's Location.Direction must carry. The heading
+// below deliberately differs, so a fixture replay distinguishes the two
+// sources instead of passing either way.
+#define A_GPS_COG 9000
 #define A_GPI_LAT 473566123
 #define A_GPI_LON 85321456
 #define A_GPI_ALT 500500
 #define A_GPI_REL_ALT 30500
-#define A_GPI_HDG 9000
+// Yaw, which ASTM F3411 does *not* want in Direction: 180 deg while the
+// course over ground is 90 deg. A regression back to hdg shows up as a
+// direction of 180 instead of 90.
+#define A_GPI_HDG 18000
 #define A_HB_STATUS MAV_STATE_STANDBY
 #define A_HB_BASE_MODE 0
 
@@ -36,17 +44,20 @@
 #define C_ORIGIN_LON 85321000
 #define C_ORIGIN_ALT 500000
 
-// Stream armed_unknown: 3D fix, armed, heading unknown and altitudes beyond
-// any ODID representation. MAVLink defines hdg = UINT16_MAX as "heading
+// Stream armed_unknown: 3D fix, armed, course unknown and altitudes beyond
+// any ODID representation. MAVLink defines cog = UINT16_MAX as "course
 // unknown"; relative_alt/alt near INT32_MAX (mm) are far outside the ODID
 // altitude range. main.cpp must map all of these to the ODID "unknown"
-// sentinels - not feed 655.35 deg / 2147483 m to the encoder.
+// sentinels - not feed 655.35 deg / 2147483 m to the encoder. The heading is
+// deliberately a *valid* 180 deg: reading it instead of the course would
+// broadcast a plausible-looking direction rather than "unknown".
 #define D_GPS_FIX_TYPE 3
+#define D_GPS_COG UINT16_MAX
 #define D_GPI_LAT 473566123
 #define D_GPI_LON 85321456
 #define D_GPI_ALT 2147483647
 #define D_GPI_REL_ALT 2147483647
-#define D_GPI_HDG UINT16_MAX
+#define D_GPI_HDG 18000
 #define D_HB_STATUS MAV_STATE_ACTIVE
 #define D_HB_BASE_MODE MAV_MODE_FLAG_SAFETY_ARMED
 
@@ -120,7 +131,7 @@ int main() {
     reset_stream();
     mavlink_msg_gps_raw_int_pack(SYS_ID, COMP_ID, &msg,
         1234567000, A_GPS_FIX_TYPE, A_GPS_LAT, A_GPS_LON, A_GPS_ALT,
-        150, 250, 350, 9000, 10,
+        150, 250, A_GPS_VEL, A_GPS_COG, 10,
         A_GPS_ALT, 120, 200, 80, 500, 0);
     append_msg(&msg);
     mavlink_msg_global_position_int_pack(SYS_ID, COMP_ID, &msg,
@@ -149,7 +160,7 @@ int main() {
     reset_stream();
     mavlink_msg_gps_raw_int_pack(SYS_ID, COMP_ID, &msg,
         1234567000, A_GPS_FIX_TYPE, A_GPS_LAT, A_GPS_LON, A_GPS_ALT,
-        150, 250, 350, 9000, 10,
+        150, 250, A_GPS_VEL, A_GPS_COG, 10,
         A_GPS_ALT, 120, 200, 80, 500, 0);
     append_msg(&msg);
     mavlink_msg_heartbeat_pack(SYS_ID, COMP_ID, &msg,
@@ -164,7 +175,7 @@ int main() {
     reset_stream();
     mavlink_msg_gps_raw_int_pack(SYS_ID, COMP_ID, &msg,
         1234567000, A_GPS_FIX_TYPE, A_GPS_LAT, A_GPS_LON, A_GPS_ALT,
-        150, 250, 350, 9000, 10,
+        150, 250, A_GPS_VEL, A_GPS_COG, 10,
         A_GPS_ALT, 120, 200, 80, 500, 0);
     append_msg(&msg);
     mavlink_msg_gps_global_origin_pack(SYS_ID, COMP_ID, &msg,
@@ -177,7 +188,7 @@ int main() {
     reset_stream();
     mavlink_msg_gps_raw_int_pack(SYS_ID, COMP_ID, &msg,
         1234567000, D_GPS_FIX_TYPE, A_GPS_LAT, A_GPS_LON, A_GPS_ALT,
-        150, 250, 350, 9000, 10,
+        150, 250, A_GPS_VEL, D_GPS_COG, 10,
         A_GPS_ALT, 120, 200, 80, 500, 0);
     append_msg(&msg);
     mavlink_msg_heartbeat_pack(SYS_ID, COMP_ID, &msg,
