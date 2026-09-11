@@ -145,17 +145,31 @@ void loop() {
             // RTC - so it stays "unknown" until a SYSTEM_TIME arrives.
             float timestamp = dri_location_timestamp(
                 mavlink_state.system_time.time_unix_usec);
-            dri_update_location(
-                &odid_state,
-                mavlink_state.global_position_int.lat / (double)10000000,
-                mavlink_state.global_position_int.lon / (double)10000000,
-                alt,
-                relative_alt,
-                direction,
-                speed_horizontal,
-                speed_vertical,
-                timestamp
-            );
+            // Zero-initialised so a field added to DriLocation later cannot
+            // reach the encoder as stack garbage; every ODID "unknown"
+            // sentinel that matters here is 0 anyway.
+            DriLocation location = {};
+            location.latitude = mavlink_state.global_position_int.lat / (double)10000000;
+            location.longitude = mavlink_state.global_position_int.lon / (double)10000000;
+            location.altitude_geo = alt;
+            location.height = relative_alt;
+            location.direction = direction;
+            location.speed_horizontal = speed_horizontal;
+            location.speed_vertical = speed_vertical;
+            location.timestamp = timestamp;
+            // GNSS uncertainty, straight from the receiver's own estimate.
+            // These are MAVLink v2 extension fields, so a v1 sender (which is
+            // what Betaflight speaks) truncates them away and they arrive as
+            // 0 - reported as "unknown" rather than invented from HDOP/VDOP,
+            // which would need a guessed UERE constant and would dress an
+            // assumption up as a measurement in a field a receiver may trust.
+            location.horizontal_accuracy =
+                dri_horizontal_accuracy(mavlink_state.gps_raw_int.h_acc);
+            location.vertical_accuracy =
+                dri_vertical_accuracy(mavlink_state.gps_raw_int.v_acc);
+            location.speed_accuracy =
+                dri_speed_accuracy(mavlink_state.gps_raw_int.vel_acc);
+            dri_update_location(&odid_state, &location);
             status_gnss_rcvd();
             break;
         }

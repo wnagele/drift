@@ -253,26 +253,41 @@ float dri_location_timestamp(uint64_t unix_usec) {
     return (float)((unix_usec / 1000ULL) % 3600000ULL) / 1000.0f;
 }
 
-void dri_update_location(
-    ODID_UAS_Data *data,
-    double lat,
-    double lon,
-    double alt,
-    double rel_alt,
-    float direction,
-    float speed_horizontal,
-    float speed_vertical,
-    float timestamp
-) {
-    data->Location.Latitude = lat;
-    data->Location.Longitude = lon;
-    data->Location.AltitudeGeo = alt;
+// The vendored createEnum*Accuracy() helpers take metres (m/s for speed) and
+// already map 0 onto "unknown", but they treat MAVLink's UINT32_MAX sentinel
+// as a huge-but-real estimate, which lands on the largest bucket instead of
+// "unknown". Both no-estimate cases are therefore filtered here first.
+ODID_Horizontal_accuracy_t dri_horizontal_accuracy(uint32_t h_acc_mm) {
+    if (h_acc_mm == 0 || h_acc_mm == UINT32_MAX)
+        return ODID_HOR_ACC_UNKNOWN;
+    return createEnumHorizontalAccuracy(h_acc_mm / 1000.0f);
+}
+
+ODID_Vertical_accuracy_t dri_vertical_accuracy(uint32_t v_acc_mm) {
+    if (v_acc_mm == 0 || v_acc_mm == UINT32_MAX)
+        return ODID_VER_ACC_UNKNOWN;
+    return createEnumVerticalAccuracy(v_acc_mm / 1000.0f);
+}
+
+ODID_Speed_accuracy_t dri_speed_accuracy(uint32_t vel_acc_mm_s) {
+    if (vel_acc_mm_s == 0 || vel_acc_mm_s == UINT32_MAX)
+        return ODID_SPEED_ACC_UNKNOWN;
+    return createEnumSpeedAccuracy(vel_acc_mm_s / 1000.0f);
+}
+
+void dri_update_location(ODID_UAS_Data *data, const DriLocation *location) {
+    data->Location.Latitude = location->latitude;
+    data->Location.Longitude = location->longitude;
+    data->Location.AltitudeGeo = location->altitude_geo;
     data->Location.HeightType = ODID_HEIGHT_REF_OVER_TAKEOFF;
-    data->Location.Height = rel_alt;
-    data->Location.Direction = direction;
-    data->Location.SpeedHorizontal = speed_horizontal;
-    data->Location.SpeedVertical = speed_vertical;
-    data->Location.TimeStamp = timestamp;
+    data->Location.Height = location->height;
+    data->Location.Direction = location->direction;
+    data->Location.SpeedHorizontal = location->speed_horizontal;
+    data->Location.SpeedVertical = location->speed_vertical;
+    data->Location.TimeStamp = location->timestamp;
+    data->Location.HorizAccuracy = location->horizontal_accuracy;
+    data->Location.VertAccuracy = location->vertical_accuracy;
+    data->Location.SpeedAccuracy = location->speed_accuracy;
     data->LocationValid = 1;
 }
 

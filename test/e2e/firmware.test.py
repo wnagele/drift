@@ -27,10 +27,11 @@ from harness import SCENARIOS, Session
 # Narrative order: boot first, then the MAVLink streams arrive, the state
 # machine's gates and fallbacks are probed, status is forced, the take-off
 # location is set, the broadcast schedule is checked (normal, then with
-# unknown-heading telemetry) - followed by the serial log audit of everything
-# the firmware printed. scenarios.defaults is NOT part of the narrative: it
-# boots a factory-blank config store, so it only runs against the defaults
-# image the entrypoint selects it for (see below).
+# unknown-course telemetry), then the MAVLink v2 accuracy extensions - followed
+# by the serial log audit of everything the firmware printed.
+# scenarios.defaults is NOT part of the narrative: it boots a factory-blank
+# config store, so it only runs against the defaults image the entrypoint
+# selects it for (see below).
 SCENARIO_MODULES = [
     "scenarios.boot",
     "scenarios.defaults",
@@ -40,6 +41,7 @@ SCENARIO_MODULES = [
     "scenarios.operator",
     "scenarios.broadcast",
     "scenarios.unknown",
+    "scenarios.accuracy",
     "scenarios.serial",
 ]
 
