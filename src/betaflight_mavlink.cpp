@@ -31,6 +31,9 @@ mavlink_type_t mavlink_parse_byte(mavlink_state_t *state, uint8_t data) {
             case MAVLINK_MSG_ID_GPS_GLOBAL_ORIGIN:
                 mavlink_msg_gps_global_origin_decode(&message, &state->gps_global_origin);
                 return GPS_GLOBAL_ORIGIN;
+            case MAVLINK_MSG_ID_SYSTEM_TIME:
+                mavlink_msg_system_time_decode(&message, &state->system_time);
+                return SYSTEM_TIME;
         }
     }
     return NONE;

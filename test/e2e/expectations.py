@@ -35,6 +35,7 @@ INV_ALT = -1000        # ODID invalid altitude (MIN_ALT)
 INV_DIR = 361          # ODID invalid direction
 INV_SPEED_H = 255      # ODID invalid horizontal speed
 INV_SPEED_V = 63       # ODID invalid vertical speed
+INV_TIMESTAMP = 65535  # ODID invalid timestamp (0xFFFF)
 ODID_VERSION = 2       # ODID_PROTOCOL_VERSION
 
 # main.cpp maps MAV_STATE onto the ODID operational status. Failsafe states

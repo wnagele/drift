@@ -156,6 +156,12 @@ void dri_init(ODID_UAS_Data *data, unsigned long now) {
     // dri_update_operator()).
     data->LocationValid = 1;
 
+    // ... with one exception: odid_initLocationData() only memsets TimeStamp,
+    // so it starts at 0.0, which is a *valid* "exactly on the hour" mark
+    // rather than "unknown". Until a MAVLink SYSTEM_TIME arrives there is no
+    // UTC clock to report, so say so explicitly.
+    data->Location.TimeStamp = INV_TIMESTAMP;
+
     msg_counter = 0;
     schedule_counter = 0;
     last = now;
@@ -235,6 +241,18 @@ void dri_update_status(ODID_UAS_Data *data, ODID_status_t status) {
     data->Location.Status = status;
 }
 
+float dri_location_timestamp(uint64_t unix_usec) {
+    // MAVLink sends time_unix_usec = 0 until the flight controller has a UTC
+    // clock (the GNSS receiver sets its RTC), so 0 is "no value" rather than
+    // the Unix epoch.
+    if (unix_usec == 0)
+        return INV_TIMESTAMP;
+    // Reduce modulo the hour in integer milliseconds before converting: a
+    // float cannot hold a microsecond Unix epoch without losing the
+    // sub-second part the encoder's tenths-of-a-second resolution needs.
+    return (float)((unix_usec / 1000ULL) % 3600000ULL) / 1000.0f;
+}
+
 void dri_update_location(
     ODID_UAS_Data *data,
     double lat,
@@ -243,7 +261,8 @@ void dri_update_location(
     double rel_alt,
     float direction,
     float speed_horizontal,
-    float speed_vertical
+    float speed_vertical,
+    float timestamp
 ) {
     data->Location.Latitude = lat;
     data->Location.Longitude = lon;
@@ -253,6 +272,7 @@ void dri_update_location(
     data->Location.Direction = direction;
     data->Location.SpeedHorizontal = speed_horizontal;
     data->Location.SpeedVertical = speed_vertical;
+    data->Location.TimeStamp = timestamp;
     data->LocationValid = 1;
 }
 

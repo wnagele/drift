@@ -1,4 +1,5 @@
-from expectations import INV_ALT, INV_DIR, INV_SPEED_H, INV_SPEED_V, MAV_STATE_TO_ODID
+from expectations import (INV_ALT, INV_DIR, INV_SPEED_H, INV_SPEED_V,
+                          INV_TIMESTAMP, MAV_STATE_TO_ODID)
 from harness import scenario
 
 
@@ -19,6 +20,10 @@ def disarmed_with_fix(t):
     # still reported "unknown" until the aircraft is armed.
     t.check("odid_state.Location.SpeedHorizontal", INV_SPEED_H)
     t.check("odid_state.Location.SpeedVertical", INV_SPEED_V)
+    # This stream carries no SYSTEM_TIME, so there is still no UTC clock: the
+    # timestamp must stay "unknown" rather than fall back to the epoch, which
+    # would encode as a plausible 0.0 s past the hour.
+    t.check("odid_state.Location.TimeStamp", INV_TIMESTAMP)
     t.check("telemetry_count", 1)
     t.check("gnss_count", 1)
 

@@ -39,6 +39,13 @@
 #define A_GPI_HDG 18000
 #define A_HB_STATUS MAV_STATE_STANDBY
 #define A_HB_BASE_MODE 0
+// SYSTEM_TIME, the only UTC source DRIFT has (it carries no RTC):
+// 2026-09-11T12:34:56.700Z, i.e. 2096.7 s after the full hour - exactly
+// representable in the encoder's tenths-of-a-second resolution. Only the
+// armed_fix stream carries it, so the streams that don't still exercise the
+// "no UTC clock yet" path.
+#define A_SYS_TIME_UNIX_USEC 1789130096700000ULL
+#define A_SYS_TIME_BOOT_MS 1000
 
 // Stream armed_no_fix: no fix, armed.
 #define B_GPS_FIX_TYPE 1
@@ -160,9 +167,13 @@ int main() {
     append_msg(&msg);
     emit_stream("armed_no_fix.bin");
 
-    // --- armed_fix: GPS_RAW_INT (3D fix) + HEARTBEAT (active, armed) + GLOBAL_POSITION_INT
+    // --- armed_fix: GPS_RAW_INT (3D fix) + HEARTBEAT (active, armed) +
+    // SYSTEM_TIME + GLOBAL_POSITION_INT
     // The primary real-world scenario: an armed aircraft with good telemetry,
-    // so height and direction are broadcast alongside the position.
+    // so height, course, speed and a UTC time mark are broadcast alongside
+    // the position. SYSTEM_TIME precedes the position so the UTC clock is
+    // already known when the location update fires; GLOBAL_POSITION_INT stays
+    // last, which is what the e2e suite synchronises on.
     reset_stream();
     mavlink_msg_gps_raw_int_pack(SYS_ID, COMP_ID, &msg,
         1234567000, A_GPS_FIX_TYPE, A_GPS_LAT, A_GPS_LON, A_GPS_ALT,
@@ -171,6 +182,9 @@ int main() {
     append_msg(&msg);
     mavlink_msg_heartbeat_pack(SYS_ID, COMP_ID, &msg,
         MAV_TYPE_QUADROTOR, MAV_AUTOPILOT_GENERIC, B_HB_BASE_MODE, 0, B_HB_STATUS);
+    append_msg(&msg);
+    mavlink_msg_system_time_pack(SYS_ID, COMP_ID, &msg,
+        A_SYS_TIME_UNIX_USEC, A_SYS_TIME_BOOT_MS);
     append_msg(&msg);
     mavlink_msg_global_position_int_pack(SYS_ID, COMP_ID, &msg,
         1000, A_GPI_LAT, A_GPI_LON, A_GPI_ALT, A_GPI_REL_ALT, 120, -45, A_GPI_VZ, A_GPI_HDG);

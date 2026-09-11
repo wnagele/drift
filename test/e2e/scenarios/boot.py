@@ -1,4 +1,4 @@
-from expectations import api_fixture
+from expectations import INV_TIMESTAMP, api_fixture
 from harness import scenario
 
 CONFIG = api_fixture("config")
@@ -12,6 +12,10 @@ def boot(t):
     t.check("telemetry_count", 0)
     t.check("gnss_count", 0)
     t.check("odid_state.Location.Status", "ODID_STATUS_UNDECLARED")
+    # DRIFT has no RTC, so there is no UTC clock until a MAVLink SYSTEM_TIME
+    # arrives. odid_initUasData() only memsets TimeStamp, which would leave a
+    # valid "exactly on the hour" 0.0 here, so dri_init() sets the sentinel.
+    t.check("odid_state.Location.TimeStamp", INV_TIMESTAMP)
 
     # The NVS partition is pre-seeded with the reference aircraft's config
     # (test/e2e/nvs_seed.py, built from the same shared fixture): the

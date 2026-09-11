@@ -100,6 +100,10 @@ def broadcast(t):
     t.replay("armed_fix")
     t.run_to("dri_update_location")       # GLOBAL_POSITION_INT, the last message in the fixture
 
+    # The fixture's SYSTEM_TIME (2026-09-11T12:34:56.700Z) is the only UTC
+    # source DRIFT has, and arrives before the position: the location carries
+    # a real time mark, not the "unknown" sentinel.
+    t.check("odid_state.Location.TimeStamp", 2096.7, tol=1e-2)
     sends = t.ble_sends(full_cycle)
     cycle = cycle_of(sends)
     if cycle is None:
