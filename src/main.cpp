@@ -145,17 +145,16 @@ void loop() {
             // RTC - so it stays "unknown" until a SYSTEM_TIME arrives.
             float timestamp = dri_location_timestamp(
                 mavlink_state.system_time.time_unix_usec);
-            dri_update_location(
-                &odid_state,
-                mavlink_state.global_position_int.lat / (double)10000000,
-                mavlink_state.global_position_int.lon / (double)10000000,
-                alt,
-                relative_alt,
-                direction,
-                speed_horizontal,
-                speed_vertical,
-                timestamp
-            );
+            DriLocation location;
+            location.latitude = mavlink_state.global_position_int.lat / (double)10000000;
+            location.longitude = mavlink_state.global_position_int.lon / (double)10000000;
+            location.altitude_geo = alt;
+            location.height = relative_alt;
+            location.direction = direction;
+            location.speed_horizontal = speed_horizontal;
+            location.speed_vertical = speed_vertical;
+            location.timestamp = timestamp;
+            dri_update_location(&odid_state, &location);
             status_gnss_rcvd();
             break;
         }

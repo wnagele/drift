@@ -253,26 +253,16 @@ float dri_location_timestamp(uint64_t unix_usec) {
     return (float)((unix_usec / 1000ULL) % 3600000ULL) / 1000.0f;
 }
 
-void dri_update_location(
-    ODID_UAS_Data *data,
-    double lat,
-    double lon,
-    double alt,
-    double rel_alt,
-    float direction,
-    float speed_horizontal,
-    float speed_vertical,
-    float timestamp
-) {
-    data->Location.Latitude = lat;
-    data->Location.Longitude = lon;
-    data->Location.AltitudeGeo = alt;
+void dri_update_location(ODID_UAS_Data *data, const DriLocation *location) {
+    data->Location.Latitude = location->latitude;
+    data->Location.Longitude = location->longitude;
+    data->Location.AltitudeGeo = location->altitude_geo;
     data->Location.HeightType = ODID_HEIGHT_REF_OVER_TAKEOFF;
-    data->Location.Height = rel_alt;
-    data->Location.Direction = direction;
-    data->Location.SpeedHorizontal = speed_horizontal;
-    data->Location.SpeedVertical = speed_vertical;
-    data->Location.TimeStamp = timestamp;
+    data->Location.Height = location->height;
+    data->Location.Direction = location->direction;
+    data->Location.SpeedHorizontal = location->speed_horizontal;
+    data->Location.SpeedVertical = location->speed_vertical;
+    data->Location.TimeStamp = location->timestamp;
     data->LocationValid = 1;
 }
 

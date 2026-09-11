@@ -76,21 +76,23 @@ void dri_update_status(ODID_UAS_Data *data, ODID_status_t status);
 // (MAVLink reports time_unix_usec = 0 until the GNSS receiver sets it).
 float dri_location_timestamp(uint64_t unix_usec);
 
-// `direction` is the course over ground (track) in degrees from true North,
-// not the airframe's yaw; `speed_horizontal` is ground speed in m/s and
-// `speed_vertical` is m/s with up positive; `timestamp` is seconds after the
-// full hour UTC - see ODID_Location_data.
-void dri_update_location(
-    ODID_UAS_Data *data,
-    double latitude,
-    double longitude,
-    double alt,
-    double relative_alt,
-    float direction,
-    float speed_horizontal,
-    float speed_vertical,
-    float timestamp
-);
+// One Location/Vector update, as a value struct rather than a positional
+// argument list: the message has enough same-typed fields (four doubles and
+// four floats) that call-site ordering mistakes would not be caught by the
+// compiler. Follows the HttpApiResponse / WifiApParams / BleAdvFrame pattern.
+typedef struct {
+    double latitude;                  // degrees
+    double longitude;                 // degrees
+    double altitude_geo;              // m, WGS-84 geometric altitude
+    double height;                    // m above the take-off point
+    float direction;                  // degrees from true North: the course
+                                      // over ground (track), not the yaw
+    float speed_horizontal;           // m/s, positive only (ground speed)
+    float speed_vertical;             // m/s, up positive
+    float timestamp;                  // seconds after the full hour, UTC
+} DriLocation;
+
+void dri_update_location(ODID_UAS_Data *data, const DriLocation *location);
 void dri_update_operator(
     ODID_UAS_Data *data,
     double lat,

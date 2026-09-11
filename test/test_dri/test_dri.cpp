@@ -45,14 +45,29 @@ static ODID_UAS_Data data;
 // the expected frames can be built against it.
 static const uint8_t WIFI_NAN_MAC[6] = { 0x24, 0x6F, 0x28, 0x10, 0x00, 0x01 };
 
+// The reference aircraft's Location/Vector update. `direction` is a parameter
+// because several tests need the same aircraft with an unknown course.
+static DriLocation reference_location(float direction) {
+    DriLocation location;
+    location.latitude = LAT;
+    location.longitude = LON;
+    location.altitude_geo = ALT_GEO;
+    location.height = HEIGHT;
+    location.direction = direction;
+    location.speed_horizontal = SPEED_HORIZONTAL;
+    location.speed_vertical = SPEED_VERTICAL;
+    location.timestamp = TIMESTAMP;
+    return location;
+}
+
 // Build the reference ODID_UAS_Data exactly as the firmware does on a
 // configured device receiving good telemetry.
 static void build_reference_data() {
     odid_initUasData(&data);
     dri_populate_identity(&data, UA_ID, OP_ID, UA_DESC);
     dri_update_status(&data, STATUS);
-    dri_update_location(&data, LAT, LON, ALT_GEO, HEIGHT, DIRECTION,
-                        SPEED_HORIZONTAL, SPEED_VERTICAL, TIMESTAMP);
+    DriLocation location = reference_location(DIRECTION);
+    dri_update_location(&data, &location);
     dri_update_operator(&data, OPERATOR_LAT, OPERATOR_LON, OPERATOR_ALT_GEO);
 }
 
@@ -733,8 +748,8 @@ void test_transmit_skips_unencodable_wifi_nan_action_frame() {
     TEST_ASSERT_EQUAL(1, wifi_nan_sync_send_count);
     TEST_ASSERT_EQUAL(0, wifi_nan_action_send_count);
 
-    dri_update_location(&data, LAT, LON, ALT_GEO, HEIGHT, INV_DIR,
-                        SPEED_HORIZONTAL, SPEED_VERTICAL, TIMESTAMP);
+    DriLocation recovered = reference_location(INV_DIR);
+    dri_update_location(&data, &recovered);
     dri_transmit(&data, 1000 + 2 * DRI_WIFI_NAN_INTERVAL + 2);
     TEST_ASSERT_EQUAL(2, wifi_nan_sync_send_count);
     TEST_ASSERT_EQUAL(1, wifi_nan_action_send_count);
@@ -852,8 +867,8 @@ void test_populate_identity_fields_are_independent() {
 void test_update_setters() {
     odid_initUasData(&data);
     dri_update_status(&data, STATUS);
-    dri_update_location(&data, LAT, LON, ALT_GEO, HEIGHT, DIRECTION,
-                        SPEED_HORIZONTAL, SPEED_VERTICAL, TIMESTAMP);
+    DriLocation location = reference_location(DIRECTION);
+    dri_update_location(&data, &location);
     dri_update_operator(&data, OPERATOR_LAT, OPERATOR_LON, OPERATOR_ALT_GEO);
 
     TEST_ASSERT_EQUAL(ODID_STATUS_AIRBORNE, data.Location.Status);
