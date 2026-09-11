@@ -1,5 +1,7 @@
 from expectations import (INV_ALT, INV_DIR, INV_SPEED_H, INV_SPEED_V,
-                          INV_TIMESTAMP, MAV_STATE_TO_ODID)
+                          INV_TIMESTAMP, MAV_STATE_TO_ODID,
+                          ODID_HOR_ACC_UNKNOWN, ODID_SPEED_ACC_UNKNOWN,
+                          ODID_VER_ACC_UNKNOWN)
 from harness import scenario
 
 
@@ -24,6 +26,13 @@ def disarmed_with_fix(t):
     # timestamp must stay "unknown" rather than fall back to the epoch, which
     # would encode as a plausible 0.0 s past the hour.
     t.check("odid_state.Location.TimeStamp", INV_TIMESTAMP)
+    # GPS_RAW_INT's accuracy fields are MAVLink v2 extensions and this stream
+    # is v1 (like Betaflight), so they arrive as 0 and must read "unknown"
+    # rather than a 0 mm estimate. The accuracy scenario covers the populated
+    # v2 case.
+    t.check("odid_state.Location.HorizAccuracy", ODID_HOR_ACC_UNKNOWN)
+    t.check("odid_state.Location.VertAccuracy", ODID_VER_ACC_UNKNOWN)
+    t.check("odid_state.Location.SpeedAccuracy", ODID_SPEED_ACC_UNKNOWN)
     t.check("telemetry_count", 1)
     t.check("gnss_count", 1)
 

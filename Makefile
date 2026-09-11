@@ -13,7 +13,8 @@ MAVLINK_FIXTURES := test/fixtures/mavlink/disarmed_fix.bin \
                     test/fixtures/mavlink/fix_2d.bin \
                     test/fixtures/mavlink/emergency.bin \
                     test/fixtures/mavlink/undeclared.bin \
-                    test/fixtures/mavlink/origin_set.bin
+                    test/fixtures/mavlink/origin_set.bin \
+                    test/fixtures/mavlink/accuracy_v2.bin
 ODID_FIXTURES := test/fixtures/odid/basic_id.bin \
                   test/fixtures/odid/self_id.bin \
                   test/fixtures/odid/operator_id.bin \

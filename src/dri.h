@@ -76,6 +76,15 @@ void dri_update_status(ODID_UAS_Data *data, ODID_status_t status);
 // (MAVLink reports time_unix_usec = 0 until the GNSS receiver sets it).
 float dri_location_timestamp(uint64_t unix_usec);
 
+// The ODID accuracy enums, from the MAVLink GPS_RAW_INT uncertainty fields
+// (h_acc/v_acc in mm, vel_acc in mm/s). Each returns the enum's "unknown"
+// member when the flight controller reports no estimate: MAVLink's UINT32_MAX
+// sentinel, and also 0 - which is what a MAVLink v1 sender leaves behind,
+// since these three are v2 extension fields that a v1 frame truncates away.
+ODID_Horizontal_accuracy_t dri_horizontal_accuracy(uint32_t h_acc_mm);
+ODID_Vertical_accuracy_t dri_vertical_accuracy(uint32_t v_acc_mm);
+ODID_Speed_accuracy_t dri_speed_accuracy(uint32_t vel_acc_mm_s);
+
 // One Location/Vector update, as a value struct rather than a positional
 // argument list: the message has enough same-typed fields (four doubles and
 // four floats) that call-site ordering mistakes would not be caught by the
@@ -90,6 +99,9 @@ typedef struct {
     float speed_horizontal;           // m/s, positive only (ground speed)
     float speed_vertical;             // m/s, up positive
     float timestamp;                  // seconds after the full hour, UTC
+    ODID_Horizontal_accuracy_t horizontal_accuracy;
+    ODID_Vertical_accuracy_t vertical_accuracy;
+    ODID_Speed_accuracy_t speed_accuracy;
 } DriLocation;
 
 void dri_update_location(ODID_UAS_Data *data, const DriLocation *location);

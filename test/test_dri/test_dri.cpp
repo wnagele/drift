@@ -48,7 +48,7 @@ static const uint8_t WIFI_NAN_MAC[6] = { 0x24, 0x6F, 0x28, 0x10, 0x00, 0x01 };
 // The reference aircraft's Location/Vector update. `direction` is a parameter
 // because several tests need the same aircraft with an unknown course.
 static DriLocation reference_location(float direction) {
-    DriLocation location;
+    DriLocation location = {};
     location.latitude = LAT;
     location.longitude = LON;
     location.altitude_geo = ALT_GEO;
@@ -57,6 +57,12 @@ static DriLocation reference_location(float direction) {
     location.speed_horizontal = SPEED_HORIZONTAL;
     location.speed_vertical = SPEED_VERTICAL;
     location.timestamp = TIMESTAMP;
+    // The reference aircraft's capture is MAVLink v1, which truncates the
+    // GPS_RAW_INT accuracy extensions away - so the reference encodings carry
+    // "unknown", matching gen_odid_fixtures.cpp (which leaves them memset).
+    location.horizontal_accuracy = ODID_HOR_ACC_UNKNOWN;
+    location.vertical_accuracy = ODID_VER_ACC_UNKNOWN;
+    location.speed_accuracy = ODID_SPEED_ACC_UNKNOWN;
     return location;
 }
 
@@ -942,6 +948,73 @@ void test_init_reports_unknown_timestamp() {
     TEST_ASSERT_EQUAL_FLOAT(INV_TIMESTAMP, data.Location.TimeStamp);
 }
 
+// --- Accuracy enums --------------------------------------------------------
+
+void test_accuracy_enums_map_mavlink_millimetres() {
+    // The vendored helpers bucket in metres; the MAVLink fields are mm (mm/s
+    // for speed). The fixture values land in three different buckets.
+    TEST_ASSERT_EQUAL(ODID_HOR_ACC_3_METER, dri_horizontal_accuracy(1500));   // 1.5 m
+    TEST_ASSERT_EQUAL(ODID_VER_ACC_10_METER, dri_vertical_accuracy(3500));    // 3.5 m
+    TEST_ASSERT_EQUAL(ODID_SPEED_ACC_1_METERS_PER_SECOND,
+                      dri_speed_accuracy(500));                              // 0.5 m/s
+}
+
+void test_accuracy_enums_no_estimate_is_unknown() {
+    // Two distinct "no estimate" cases must both read unknown: MAVLink's
+    // UINT32_MAX sentinel, and 0 - which is what a MAVLink v1 sender leaves
+    // behind, because these are v2 extension fields a v1 frame truncates away
+    // (Betaflight speaks v1, so 0 is the common real-world case).
+    TEST_ASSERT_EQUAL(ODID_HOR_ACC_UNKNOWN, dri_horizontal_accuracy(0));
+    TEST_ASSERT_EQUAL(ODID_VER_ACC_UNKNOWN, dri_vertical_accuracy(0));
+    TEST_ASSERT_EQUAL(ODID_SPEED_ACC_UNKNOWN, dri_speed_accuracy(0));
+
+    TEST_ASSERT_EQUAL(ODID_HOR_ACC_UNKNOWN, dri_horizontal_accuracy(UINT32_MAX));
+    TEST_ASSERT_EQUAL(ODID_VER_ACC_UNKNOWN, dri_vertical_accuracy(UINT32_MAX));
+    TEST_ASSERT_EQUAL(ODID_SPEED_ACC_UNKNOWN, dri_speed_accuracy(UINT32_MAX));
+}
+
+void test_accuracy_enums_bucket_boundaries() {
+    // Just inside and just outside a boundary, to pin the mm -> m scaling:
+    // the horizontal 3 m bucket starts at 1 m, the 10 m bucket at 3 m.
+    TEST_ASSERT_EQUAL(ODID_HOR_ACC_1_METER, dri_horizontal_accuracy(999));
+    TEST_ASSERT_EQUAL(ODID_HOR_ACC_3_METER, dri_horizontal_accuracy(1000));
+    TEST_ASSERT_EQUAL(ODID_HOR_ACC_3_METER, dri_horizontal_accuracy(2999));
+    TEST_ASSERT_EQUAL(ODID_HOR_ACC_10_METER, dri_horizontal_accuracy(3000));
+    // A genuinely huge but real estimate saturates to the coarsest bucket
+    // rather than wrapping round to "unknown".
+    TEST_ASSERT_EQUAL(ODID_HOR_ACC_UNKNOWN, dri_horizontal_accuracy(20000000)); // 20 km
+    TEST_ASSERT_EQUAL(ODID_HOR_ACC_10NM, dri_horizontal_accuracy(18000000));    // 18 km
+}
+
+void test_accuracy_enums_are_encodable() {
+    // Whatever the input, the result must be a value the encoder accepts.
+    const uint32_t probes[] = { 0, 1, 999, 1500, 3500, 150000, UINT32_MAX };
+    for (size_t i = 0; i < sizeof(probes) / sizeof(probes[0]); i++) {
+        build_reference_data();
+        data.Location.HorizAccuracy = dri_horizontal_accuracy(probes[i]);
+        data.Location.VertAccuracy = dri_vertical_accuracy(probes[i]);
+        data.Location.SpeedAccuracy = dri_speed_accuracy(probes[i]);
+        ODID_Message_encoded encoded;
+        char msg[64];
+        snprintf(msg, sizeof(msg), "probe %zu", i);
+        TEST_ASSERT_TRUE_MESSAGE(dri_encode_slot(&data, 2, &encoded), msg);
+    }
+}
+
+void test_update_location_sets_accuracy_fields() {
+    odid_initUasData(&data);
+    DriLocation location = reference_location(DIRECTION);
+    location.horizontal_accuracy = ODID_HOR_ACC_3_METER;
+    location.vertical_accuracy = ODID_VER_ACC_10_METER;
+    location.speed_accuracy = ODID_SPEED_ACC_1_METERS_PER_SECOND;
+    dri_update_location(&data, &location);
+
+    // Distinct values, so a field mixed up with its neighbour is caught.
+    TEST_ASSERT_EQUAL(ODID_HOR_ACC_3_METER, data.Location.HorizAccuracy);
+    TEST_ASSERT_EQUAL(ODID_VER_ACC_10_METER, data.Location.VertAccuracy);
+    TEST_ASSERT_EQUAL(ODID_SPEED_ACC_1_METERS_PER_SECOND, data.Location.SpeedAccuracy);
+}
+
 // --- Encoder rejection of out-of-range data --------------------------------
 
 // The vendored opendroneid encoder validates its input and returns ODID_FAIL
@@ -1133,6 +1206,11 @@ int main(int, char **) {
     RUN_TEST(test_location_timestamp_wraps_at_the_hour);
     RUN_TEST(test_location_timestamp_stays_in_encoder_range);
     RUN_TEST(test_init_reports_unknown_timestamp);
+    RUN_TEST(test_accuracy_enums_map_mavlink_millimetres);
+    RUN_TEST(test_accuracy_enums_no_estimate_is_unknown);
+    RUN_TEST(test_accuracy_enums_bucket_boundaries);
+    RUN_TEST(test_accuracy_enums_are_encodable);
+    RUN_TEST(test_update_location_sets_accuracy_fields);
     RUN_TEST(test_encode_slot_rejects_out_of_range_direction);
     RUN_TEST(test_encode_slot_rejects_out_of_range_height);
     RUN_TEST(test_encode_slot_rejects_out_of_range_altitude);

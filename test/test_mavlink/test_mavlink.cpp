@@ -127,6 +127,46 @@ void test_armed_unknown_stream() {
     TEST_ASSERT_EQUAL(INT32_MAX, state.global_position_int.relative_alt);
 }
 
+void test_armed_fix_v1_truncates_the_accuracy_extensions() {
+    // Characterization test for a MAVLink protocol constraint, not a bug in
+    // the fixture: GPS_RAW_INT's h_acc/v_acc/vel_acc are v2 *extension*
+    // fields at offsets 34/38/42, past the 30-byte v1 payload. The generator
+    // packs 120/200/80 into them, but every stream except accuracy_v2 is
+    // emitted as v1 (like Betaflight), so they never reach the wire and
+    // decode as 0. main.cpp must therefore report accuracy as "unknown" on a
+    // v1 sender rather than treating 0 as a 0 mm estimate.
+    feed(capture("armed_fix"), NULL, 0);
+
+    TEST_ASSERT_EQUAL(9000, state.gps_raw_int.cog);   // within the v1 payload
+    TEST_ASSERT_EQUAL(350, state.gps_raw_int.vel);    // within the v1 payload
+    TEST_ASSERT_EQUAL(0, state.gps_raw_int.h_acc);    // extension: truncated
+    TEST_ASSERT_EQUAL(0, state.gps_raw_int.v_acc);    // extension: truncated
+    TEST_ASSERT_EQUAL(0, state.gps_raw_int.vel_acc);  // extension: truncated
+}
+
+void test_accuracy_v2_stream() {
+    // The one MAVLink v2 stream: the accuracy extensions survive, so this is
+    // what a v2 sender (ArduPilot/PX4) delivers. Three different values, so a
+    // mis-wiring that swaps them is visible.
+    mavlink_type_t seen[8];
+    size_t count = feed(capture("accuracy_v2"), seen, 8);
+
+    TEST_ASSERT_EQUAL(4, count);
+    TEST_ASSERT_EQUAL(GPS_RAW_INT, seen[0]);
+    TEST_ASSERT_EQUAL(HEARTBEAT, seen[1]);
+    TEST_ASSERT_EQUAL(SYSTEM_TIME, seen[2]);
+    TEST_ASSERT_EQUAL(GLOBAL_POSITION_INT, seen[3]);
+
+    TEST_ASSERT_EQUAL(3, state.gps_raw_int.fix_type);
+    TEST_ASSERT_EQUAL(MAV_MODE_FLAG_SAFETY_ARMED, state.heartbeat.base_mode);
+    TEST_ASSERT_EQUAL(1500, state.gps_raw_int.h_acc);    // 1.5 m
+    TEST_ASSERT_EQUAL(3500, state.gps_raw_int.v_acc);    // 3.5 m
+    TEST_ASSERT_EQUAL(500, state.gps_raw_int.vel_acc);   // 0.5 m/s
+    // The v1-payload fields still decode identically in a v2 frame.
+    TEST_ASSERT_EQUAL(9000, state.gps_raw_int.cog);
+    TEST_ASSERT_EQUAL(350, state.gps_raw_int.vel);
+}
+
 void test_no_fix_position_stream() {
     // A position and an origin arriving without any GNSS fix; main.cpp must
     // gate both on gps_fix (asserted by the e2e branches scenarios).
@@ -236,6 +276,8 @@ int main(int, char **) {
     RUN_TEST(test_armed_no_fix_stream);
     RUN_TEST(test_armed_fix_stream);
     RUN_TEST(test_armed_unknown_stream);
+    RUN_TEST(test_armed_fix_v1_truncates_the_accuracy_extensions);
+    RUN_TEST(test_accuracy_v2_stream);
     RUN_TEST(test_no_fix_position_stream);
     RUN_TEST(test_fix_2d_stream);
     RUN_TEST(test_emergency_stream);

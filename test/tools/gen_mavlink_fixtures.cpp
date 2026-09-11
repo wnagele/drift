@@ -97,6 +97,18 @@
 // (critical, flight termination -> ODID_STATUS_EMERGENCY) and an unmapped
 // status (poweroff -> ODID_STATUS_UNDECLARED, disarmed).
 
+// Stream accuracy_v2: 3D fix, armed, with the GNSS uncertainty fields
+// populated - and emitted as MAVLink **v2**, unlike every other stream here.
+// h_acc/v_acc/vel_acc are v2 *extension* fields (offsets 34/38/42, past
+// GPS_RAW_INT's 30-byte v1 payload), so a v1 frame truncates them away and
+// they decode as 0. Betaflight speaks v1, so this stream stands in for a v2
+// sender such as ArduPilot or PX4 - it is the only way to exercise a
+// populated accuracy at all. The three values are chosen to land in three
+// *different* enum buckets, so a mis-wiring that swaps them is caught.
+#define G_GPS_H_ACC 1500      // 1.5 m   -> ODID_HOR_ACC_3_METER (11)
+#define G_GPS_V_ACC 3500      // 3.5 m   -> ODID_VER_ACC_10_METER (4)
+#define G_GPS_VEL_ACC 500     // 0.5 m/s -> ODID_SPEED_ACC_1_METERS_PER_SECOND (3)
+
 static uint8_t stream[1024];
 static size_t stream_len;
 
@@ -106,6 +118,17 @@ static void reset_stream() {
     // stream's bytes depend only on its own messages, not on the emission
     // order in this generator.
     mavlink_get_channel_status(MAVLINK_COMM_0)->current_tx_seq = 0;
+}
+
+// Betaflight emits MAVLink v1, which is what every stream here uses. The
+// accuracy_v2 stream switches to v2 so that GPS_RAW_INT's extension fields
+// survive onto the wire.
+static void emit_mavlink_v1(int enabled) {
+    mavlink_status_t *chan = mavlink_get_channel_status(MAVLINK_COMM_0);
+    if (enabled)
+        chan->flags |= MAVLINK_STATUS_FLAG_OUT_MAVLINK1;
+    else
+        chan->flags &= ~MAVLINK_STATUS_FLAG_OUT_MAVLINK1;
 }
 
 static void append_msg(mavlink_message_t *msg) {
@@ -135,8 +158,7 @@ static void emit_stream(const char *name) {
 
 int main() {
     // Emit MAVLink v1 frames like Betaflight.
-    mavlink_status_t *chan = mavlink_get_channel_status(MAVLINK_COMM_0);
-    chan->flags |= MAVLINK_STATUS_FLAG_OUT_MAVLINK1;
+    emit_mavlink_v1(1);
 
     mavlink_message_t msg;
 
@@ -269,6 +291,29 @@ int main() {
         MAV_TYPE_QUADROTOR, MAV_AUTOPILOT_GENERIC, 0, 0, MAV_STATE_POWEROFF);
     append_msg(&msg);
     emit_stream("undeclared.bin");
+
+    // --- accuracy_v2 (MAVLink v2): GPS_RAW_INT (3D fix, uncertainty fields
+    // populated) + HEARTBEAT (active, armed) + SYSTEM_TIME +
+    // GLOBAL_POSITION_INT. GLOBAL_POSITION_INT stays last, which is what the
+    // e2e suite synchronises on.
+    emit_mavlink_v1(0);
+    reset_stream();
+    mavlink_msg_gps_raw_int_pack(SYS_ID, COMP_ID, &msg,
+        1234567000, A_GPS_FIX_TYPE, A_GPS_LAT, A_GPS_LON, A_GPS_ALT,
+        150, 250, A_GPS_VEL, A_GPS_COG, 10,
+        A_GPS_ALT, G_GPS_H_ACC, G_GPS_V_ACC, G_GPS_VEL_ACC, 500, 0);
+    append_msg(&msg);
+    mavlink_msg_heartbeat_pack(SYS_ID, COMP_ID, &msg,
+        MAV_TYPE_QUADROTOR, MAV_AUTOPILOT_GENERIC, B_HB_BASE_MODE, 0, B_HB_STATUS);
+    append_msg(&msg);
+    mavlink_msg_system_time_pack(SYS_ID, COMP_ID, &msg,
+        A_SYS_TIME_UNIX_USEC, A_SYS_TIME_BOOT_MS);
+    append_msg(&msg);
+    mavlink_msg_global_position_int_pack(SYS_ID, COMP_ID, &msg,
+        1000, A_GPI_LAT, A_GPI_LON, A_GPI_ALT, A_GPI_REL_ALT, 120, -45, A_GPI_VZ, A_GPI_HDG);
+    append_msg(&msg);
+    emit_stream("accuracy_v2.bin");
+    emit_mavlink_v1(1);
 
     return 0;
 }

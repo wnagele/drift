@@ -36,6 +36,17 @@ INV_DIR = 361          # ODID invalid direction
 INV_SPEED_H = 255      # ODID invalid horizontal speed
 INV_SPEED_V = 63       # ODID invalid vertical speed
 INV_TIMESTAMP = 65535  # ODID invalid timestamp (0xFFFF)
+# ODID accuracy enum members. gdb prints an enum-typed field as its member
+# name, so these are compared as strings - the same convention
+# MAV_STATE_TO_ODID uses for Location.Status. The three populated values are
+# what the accuracy_v2 fixture's 1.5 m / 3.5 m / 0.5 m/s uncertainties map
+# onto, deliberately three different buckets.
+ODID_HOR_ACC_3_METER = "ODID_HOR_ACC_3_METER"
+ODID_VER_ACC_10_METER = "ODID_VER_ACC_10_METER"
+ODID_SPEED_ACC_1_MPS = "ODID_SPEED_ACC_1_METERS_PER_SECOND"
+ODID_HOR_ACC_UNKNOWN = "ODID_HOR_ACC_UNKNOWN"
+ODID_VER_ACC_UNKNOWN = "ODID_VER_ACC_UNKNOWN"
+ODID_SPEED_ACC_UNKNOWN = "ODID_SPEED_ACC_UNKNOWN"
 ODID_VERSION = 2       # ODID_PROTOCOL_VERSION
 
 # main.cpp maps MAV_STATE onto the ODID operational status. Failsafe states
