@@ -241,7 +241,9 @@ void dri_update_location(
     double lon,
     double alt,
     double rel_alt,
-    float direction
+    float direction,
+    float speed_horizontal,
+    float speed_vertical
 ) {
     data->Location.Latitude = lat;
     data->Location.Longitude = lon;
@@ -249,6 +251,8 @@ void dri_update_location(
     data->Location.HeightType = ODID_HEIGHT_REF_OVER_TAKEOFF;
     data->Location.Height = rel_alt;
     data->Location.Direction = direction;
+    data->Location.SpeedHorizontal = speed_horizontal;
+    data->Location.SpeedVertical = speed_vertical;
     data->LocationValid = 1;
 }
 

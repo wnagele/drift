@@ -27,6 +27,12 @@
 #define A_GPI_LON 85321456
 #define A_GPI_ALT 500500
 #define A_GPI_REL_ALT 30500
+// NED vertical speed, positive *down*: a 2.5 m/s climb. ODID's
+// SpeedVertical is positive *up*, so main.cpp must flip the sign - a
+// missing flip reports a 2.5 m/s descent. Both this and A_GPS_VEL
+// (3.5 m/s ground speed) land exactly on the ODID encoding steps (0.5 m/s
+// vertical, 0.25 m/s horizontal), so the reference encodings are lossless.
+#define A_GPI_VZ (-250)
 // Yaw, which ASTM F3411 does *not* want in Direction: 180 deg while the
 // course over ground is 90 deg. A regression back to hdg shows up as a
 // direction of 180 instead of 90.
@@ -135,7 +141,7 @@ int main() {
         A_GPS_ALT, 120, 200, 80, 500, 0);
     append_msg(&msg);
     mavlink_msg_global_position_int_pack(SYS_ID, COMP_ID, &msg,
-        1000, A_GPI_LAT, A_GPI_LON, A_GPI_ALT, A_GPI_REL_ALT, 120, -45, -30, A_GPI_HDG);
+        1000, A_GPI_LAT, A_GPI_LON, A_GPI_ALT, A_GPI_REL_ALT, 120, -45, A_GPI_VZ, A_GPI_HDG);
     append_msg(&msg);
     mavlink_msg_heartbeat_pack(SYS_ID, COMP_ID, &msg,
         MAV_TYPE_QUADROTOR, MAV_AUTOPILOT_GENERIC, A_HB_BASE_MODE, 0, A_HB_STATUS);
@@ -167,7 +173,7 @@ int main() {
         MAV_TYPE_QUADROTOR, MAV_AUTOPILOT_GENERIC, B_HB_BASE_MODE, 0, B_HB_STATUS);
     append_msg(&msg);
     mavlink_msg_global_position_int_pack(SYS_ID, COMP_ID, &msg,
-        1000, A_GPI_LAT, A_GPI_LON, A_GPI_ALT, A_GPI_REL_ALT, 120, -45, -30, A_GPI_HDG);
+        1000, A_GPI_LAT, A_GPI_LON, A_GPI_ALT, A_GPI_REL_ALT, 120, -45, A_GPI_VZ, A_GPI_HDG);
     append_msg(&msg);
     emit_stream("armed_fix.bin");
 
@@ -195,7 +201,7 @@ int main() {
         MAV_TYPE_QUADROTOR, MAV_AUTOPILOT_GENERIC, D_HB_BASE_MODE, 0, D_HB_STATUS);
     append_msg(&msg);
     mavlink_msg_global_position_int_pack(SYS_ID, COMP_ID, &msg,
-        1000, D_GPI_LAT, D_GPI_LON, D_GPI_ALT, D_GPI_REL_ALT, 120, -45, -30, D_GPI_HDG);
+        1000, D_GPI_LAT, D_GPI_LON, D_GPI_ALT, D_GPI_REL_ALT, 120, -45, A_GPI_VZ, D_GPI_HDG);
     append_msg(&msg);
     emit_stream("armed_unknown.bin");
 

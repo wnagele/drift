@@ -23,6 +23,12 @@ def unknown_telemetry(t):
     t.check("odid_state.Location.Height", INV_ALT)
     t.check("odid_state.Location.AltitudeGeo", INV_ALT)
     t.check("odid_state.Location.Latitude", 473566123 / 1e7, tol=1e-7)  # position itself survives
+    # The velocity survives too: only the course and the altitudes are out
+    # of range in this fixture. The climb rate also pins the sign flip -
+    # MAVLink's vz is -250 cm/s (positive down), which ODID must report as
+    # a +2.5 m/s climb, not a descent.
+    t.check("odid_state.Location.SpeedHorizontal", 3.5, tol=1e-3)
+    t.check("odid_state.Location.SpeedVertical", 2.5, tol=1e-3)
 
     # ... and the broadcast location slots carry a real, valid message with
     # the unknown sentinels - not zeros, and not a skipped schedule.

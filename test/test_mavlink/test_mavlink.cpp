@@ -87,10 +87,13 @@ void test_armed_fix_stream() {
     TEST_ASSERT_EQUAL(MAV_STATE_ACTIVE, state.heartbeat.system_status);
     TEST_ASSERT_EQUAL(MAV_MODE_FLAG_SAFETY_ARMED, state.heartbeat.base_mode);
     TEST_ASSERT_EQUAL(9000, state.gps_raw_int.cog);                // 90 deg course
+    TEST_ASSERT_EQUAL(350, state.gps_raw_int.vel);                 // 3.5 m/s ground speed
     TEST_ASSERT_EQUAL(473566123, state.global_position_int.lat);
     TEST_ASSERT_EQUAL(85321456, state.global_position_int.lon);
     TEST_ASSERT_EQUAL(500500, state.global_position_int.alt);      // 500.5 m
     TEST_ASSERT_EQUAL(30500, state.global_position_int.relative_alt);  // 30.5 m
+    // NED, positive down: a 2.5 m/s climb, which ODID reports positive up.
+    TEST_ASSERT_EQUAL(-250, state.global_position_int.vz);
     TEST_ASSERT_EQUAL(18000, state.global_position_int.hdg);       // 180 deg yaw
 }
 
@@ -111,6 +114,8 @@ void test_armed_unknown_stream() {
     TEST_ASSERT_EQUAL(3, state.gps_raw_int.fix_type);              // 3D fix
     TEST_ASSERT_EQUAL(MAV_STATE_ACTIVE, state.heartbeat.system_status);
     TEST_ASSERT_EQUAL(UINT16_MAX, state.gps_raw_int.cog);          // course unknown
+    TEST_ASSERT_EQUAL(350, state.gps_raw_int.vel);                 // speed still known
+    TEST_ASSERT_EQUAL(-250, state.global_position_int.vz);         // climb still known
     TEST_ASSERT_EQUAL(18000, state.global_position_int.hdg);       // yaw known, ignored
     TEST_ASSERT_EQUAL(INT32_MAX, state.global_position_int.alt);
     TEST_ASSERT_EQUAL(INT32_MAX, state.global_position_int.relative_alt);

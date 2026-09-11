@@ -1,4 +1,4 @@
-from expectations import INV_ALT, INV_DIR, MAV_STATE_TO_ODID
+from expectations import INV_ALT, INV_DIR, INV_SPEED_H, INV_SPEED_V, MAV_STATE_TO_ODID
 from harness import scenario
 
 
@@ -14,6 +14,11 @@ def disarmed_with_fix(t):
     t.check("odid_state.Location.AltitudeGeo", 500500 / 1e3, tol=1e-3)   # 500.5 m
     t.check("odid_state.Location.Height", INV_ALT)      # withheld while disarmed
     t.check("odid_state.Location.Direction", INV_DIR)   # withheld while disarmed
+    # Velocity rides the same arm gate as height and course: the fixture
+    # carries a valid 3.5 m/s ground speed and 2.5 m/s climb, and both are
+    # still reported "unknown" until the aircraft is armed.
+    t.check("odid_state.Location.SpeedHorizontal", INV_SPEED_H)
+    t.check("odid_state.Location.SpeedVertical", INV_SPEED_V)
     t.check("telemetry_count", 1)
     t.check("gnss_count", 1)
 

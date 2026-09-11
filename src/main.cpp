@@ -98,6 +98,8 @@ void loop() {
                 break;
             float relative_alt = INV_ALT;
             float direction = INV_DIR;
+            float speed_horizontal = INV_SPEED_H;
+            float speed_vertical = INV_SPEED_V;
             if (armed) {
                 relative_alt = mavlink_state.global_position_int.relative_alt / (float)1000;
                 if (relative_alt < MIN_ALT || relative_alt > MAX_ALT)
@@ -110,6 +112,28 @@ void loop() {
                 direction = mavlink_state.gps_raw_int.cog / (float)100;
                 if (direction > MAX_DIR)
                     direction = INV_DIR;      // incl. MAVLink's UINT16_MAX "course unknown"
+                // Ground speed. Out-of-range speeds are clamped, not
+                // downgraded to "unknown": ODID's rule is to report the
+                // ceiling for a faster aircraft, and the encoder rejects
+                // anything between MAX_SPEED_H and the INV_SPEED_H
+                // sentinel outright. MAVLink's UINT16_MAX really does mean
+                // "unknown", so it is checked before the clamp - otherwise
+                // a missing speed would be broadcast as 254.25 m/s.
+                if (mavlink_state.gps_raw_int.vel != UINT16_MAX) {
+                    speed_horizontal = mavlink_state.gps_raw_int.vel / (float)100;
+                    if (speed_horizontal > MAX_SPEED_H)
+                        speed_horizontal = MAX_SPEED_H;
+                }
+                // Vertical speed. MAVLink's NED vz is positive *down*,
+                // ODID's SpeedVertical is positive *up* (per the identical
+                // field in MAVLink's own OPEN_DRONE_ID_LOCATION), so the
+                // sign flips. vz has no "unknown" sentinel, so the value is
+                // always taken and only clamped to the ODID range.
+                speed_vertical = -(mavlink_state.global_position_int.vz / (float)100);
+                if (speed_vertical > MAX_SPEED_V)
+                    speed_vertical = MAX_SPEED_V;
+                else if (speed_vertical < MIN_SPEED_V)
+                    speed_vertical = MIN_SPEED_V;
             }
             float alt = mavlink_state.global_position_int.alt / (float)1000;
             if (alt < MIN_ALT || alt > MAX_ALT)
@@ -120,7 +144,9 @@ void loop() {
                 mavlink_state.global_position_int.lon / (double)10000000,
                 alt,
                 relative_alt,
-                direction
+                direction,
+                speed_horizontal,
+                speed_vertical
             );
             status_gnss_rcvd();
             break;

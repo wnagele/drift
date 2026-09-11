@@ -24,6 +24,10 @@ static const double LON = 8.5321456;
 static const double ALT_GEO = 500.5;
 static const double HEIGHT = 30.5;
 static const float DIRECTION = 90.0;
+// Ground speed 3.5 m/s and a 2.5 m/s climb, both exactly representable in
+// the ODID encoding steps (0.25 m/s horizontal, 0.5 m/s vertical).
+static const float SPEED_HORIZONTAL = 3.5;
+static const float SPEED_VERTICAL = 2.5;
 static const double OPERATOR_LAT = 47.3566000;
 static const double OPERATOR_LON = 8.5321000;
 static const double OPERATOR_ALT_GEO = 500.0;
@@ -43,7 +47,8 @@ static void build_reference_data() {
     odid_initUasData(&data);
     dri_populate_identity(&data, UA_ID, OP_ID, UA_DESC);
     dri_update_status(&data, STATUS);
-    dri_update_location(&data, LAT, LON, ALT_GEO, HEIGHT, DIRECTION);
+    dri_update_location(&data, LAT, LON, ALT_GEO, HEIGHT, DIRECTION,
+                        SPEED_HORIZONTAL, SPEED_VERTICAL);
     dri_update_operator(&data, OPERATOR_LAT, OPERATOR_LON, OPERATOR_ALT_GEO);
 }
 
@@ -724,7 +729,8 @@ void test_transmit_skips_unencodable_wifi_nan_action_frame() {
     TEST_ASSERT_EQUAL(1, wifi_nan_sync_send_count);
     TEST_ASSERT_EQUAL(0, wifi_nan_action_send_count);
 
-    dri_update_location(&data, LAT, LON, ALT_GEO, HEIGHT, INV_DIR);
+    dri_update_location(&data, LAT, LON, ALT_GEO, HEIGHT, INV_DIR,
+                        SPEED_HORIZONTAL, SPEED_VERTICAL);
     dri_transmit(&data, 1000 + 2 * DRI_WIFI_NAN_INTERVAL + 2);
     TEST_ASSERT_EQUAL(2, wifi_nan_sync_send_count);
     TEST_ASSERT_EQUAL(1, wifi_nan_action_send_count);
@@ -842,7 +848,8 @@ void test_populate_identity_fields_are_independent() {
 void test_update_setters() {
     odid_initUasData(&data);
     dri_update_status(&data, STATUS);
-    dri_update_location(&data, LAT, LON, ALT_GEO, HEIGHT, DIRECTION);
+    dri_update_location(&data, LAT, LON, ALT_GEO, HEIGHT, DIRECTION,
+                        SPEED_HORIZONTAL, SPEED_VERTICAL);
     dri_update_operator(&data, OPERATOR_LAT, OPERATOR_LON, OPERATOR_ALT_GEO);
 
     TEST_ASSERT_EQUAL(ODID_STATUS_AIRBORNE, data.Location.Status);
@@ -852,6 +859,8 @@ void test_update_setters() {
     TEST_ASSERT_EQUAL(ODID_HEIGHT_REF_OVER_TAKEOFF, data.Location.HeightType);
     TEST_ASSERT_EQUAL_DOUBLE(HEIGHT, data.Location.Height);
     TEST_ASSERT_EQUAL_FLOAT(DIRECTION, data.Location.Direction);
+    TEST_ASSERT_EQUAL_FLOAT(SPEED_HORIZONTAL, data.Location.SpeedHorizontal);
+    TEST_ASSERT_EQUAL_FLOAT(SPEED_VERTICAL, data.Location.SpeedVertical);
 
     TEST_ASSERT_EQUAL(ODID_OPERATOR_LOCATION_TYPE_TAKEOFF, data.System.OperatorLocationType);
     TEST_ASSERT_EQUAL_DOUBLE(OPERATOR_LAT, data.System.OperatorLatitude);
@@ -987,6 +996,12 @@ void test_encode_decode_round_trip() {
     TEST_ASSERT_FLOAT_WITHIN(0.5f, ALT_GEO, decoded.AltitudeGeo);
     TEST_ASSERT_FLOAT_WITHIN(0.5f, HEIGHT, decoded.Height);
     TEST_ASSERT_FLOAT_WITHIN(1.0f, DIRECTION, decoded.Direction);
+    // Both speeds sit exactly on an encoding step, so they survive the round
+    // trip losslessly - including the sign of the climb rate, which is the
+    // one field where MAVLink (positive down) and ODID (positive up)
+    // disagree.
+    TEST_ASSERT_EQUAL_FLOAT(SPEED_HORIZONTAL, decoded.SpeedHorizontal);
+    TEST_ASSERT_EQUAL_FLOAT(SPEED_VERTICAL, decoded.SpeedVertical);
 }
 
 int main(int, char **) {
