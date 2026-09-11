@@ -21,6 +21,12 @@ static const double LON = 8.5321456;
 static const double ALT_GEO = 500.5;
 static const double HEIGHT = 30.5;
 static const float DIRECTION = 90.0;
+// Ground speed 3.5 m/s and a 2.5 m/s climb - the MAVLink fixtures' 350 cm/s
+// GPS_RAW_INT.vel and -250 cm/s (positive-down) GLOBAL_POSITION_INT.vz,
+// sign-flipped to ODID's positive-up convention. Both land exactly on the
+// ODID encoding steps, so these encodings are lossless.
+static const float SPEED_HORIZONTAL = 3.5;
+static const float SPEED_VERTICAL = 2.5;
 static const double OPERATOR_LAT = 47.3566000;
 static const double OPERATOR_LON = 8.5321000;
 static const double OPERATOR_ALT_GEO = 500.0;
@@ -58,6 +64,8 @@ int main() {
     data.Location.HeightType = ODID_HEIGHT_REF_OVER_TAKEOFF;
     data.Location.Height = HEIGHT;
     data.Location.Direction = DIRECTION;
+    data.Location.SpeedHorizontal = SPEED_HORIZONTAL;
+    data.Location.SpeedVertical = SPEED_VERTICAL;
     data.System.OperatorLocationType = ODID_OPERATOR_LOCATION_TYPE_TAKEOFF;
     data.System.OperatorLatitude = OPERATOR_LAT;
     data.System.OperatorLongitude = OPERATOR_LON;
@@ -85,10 +93,13 @@ int main() {
     encodeLocationMessage((ODID_Location_encoded *)&encoded, &data.Location);
     emit_message("location", encoded.rawData, ODID_MESSAGE_SIZE);
 
-    // The armed_unknown MAVLink scenario: same aircraft, but heading unknown
+    // The armed_unknown MAVLink scenario: same aircraft, but course unknown
     // (INV_DIR) and altitude/height unknown (INV_ALT) after main.cpp's range
     // guards. The encoder accepts these spec "unknown" sentinels - unlike the
-    // raw 655.35 deg / 2147483 m values, which it rejects outright.
+    // raw 655.35 deg / 2147483 m values, which it rejects outright. The
+    // speeds stay *valid* here on purpose: that fixture only zeroes out the
+    // course and the altitudes, so a guard that also wiped the speeds would
+    // show up as a mismatch.
     data.Location.Direction = INV_DIR;
     data.Location.AltitudeGeo = INV_ALT;
     data.Location.Height = INV_ALT;
