@@ -12,6 +12,7 @@ over its own WiFi access point.
 
 1. [Installation](/installation/) — wire, flash and configure a module.
 2. [Broadcasting](/broadcasting/) — the transports, their defaults and receiver compatibility.
+3. [Regulations](/regulations/) — what the Remote ID rules in your jurisdiction require, at the technical level.
 
 {: .important }
 > Read the [Legal](/legal/) section of this project before use!
