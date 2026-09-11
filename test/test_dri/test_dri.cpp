@@ -28,6 +28,10 @@ static const float DIRECTION = 90.0;
 // the ODID encoding steps (0.25 m/s horizontal, 0.5 m/s vertical).
 static const float SPEED_HORIZONTAL = 3.5;
 static const float SPEED_VERTICAL = 2.5;
+// 2026-09-11T12:34:56.700Z as seconds after the full hour, the armed_fix
+// fixture's SYSTEM_TIME (exact in the encoder's tenths-of-a-second steps).
+static const float TIMESTAMP = 2096.7;
+static const uint64_t TIMESTAMP_UNIX_USEC = 1789130096700000ULL;
 static const double OPERATOR_LAT = 47.3566000;
 static const double OPERATOR_LON = 8.5321000;
 static const double OPERATOR_ALT_GEO = 500.0;
@@ -48,7 +52,7 @@ static void build_reference_data() {
     dri_populate_identity(&data, UA_ID, OP_ID, UA_DESC);
     dri_update_status(&data, STATUS);
     dri_update_location(&data, LAT, LON, ALT_GEO, HEIGHT, DIRECTION,
-                        SPEED_HORIZONTAL, SPEED_VERTICAL);
+                        SPEED_HORIZONTAL, SPEED_VERTICAL, TIMESTAMP);
     dri_update_operator(&data, OPERATOR_LAT, OPERATOR_LON, OPERATOR_ALT_GEO);
 }
 
@@ -730,7 +734,7 @@ void test_transmit_skips_unencodable_wifi_nan_action_frame() {
     TEST_ASSERT_EQUAL(0, wifi_nan_action_send_count);
 
     dri_update_location(&data, LAT, LON, ALT_GEO, HEIGHT, INV_DIR,
-                        SPEED_HORIZONTAL, SPEED_VERTICAL);
+                        SPEED_HORIZONTAL, SPEED_VERTICAL, TIMESTAMP);
     dri_transmit(&data, 1000 + 2 * DRI_WIFI_NAN_INTERVAL + 2);
     TEST_ASSERT_EQUAL(2, wifi_nan_sync_send_count);
     TEST_ASSERT_EQUAL(1, wifi_nan_action_send_count);
@@ -849,7 +853,7 @@ void test_update_setters() {
     odid_initUasData(&data);
     dri_update_status(&data, STATUS);
     dri_update_location(&data, LAT, LON, ALT_GEO, HEIGHT, DIRECTION,
-                        SPEED_HORIZONTAL, SPEED_VERTICAL);
+                        SPEED_HORIZONTAL, SPEED_VERTICAL, TIMESTAMP);
     dri_update_operator(&data, OPERATOR_LAT, OPERATOR_LON, OPERATOR_ALT_GEO);
 
     TEST_ASSERT_EQUAL(ODID_STATUS_AIRBORNE, data.Location.Status);
@@ -861,6 +865,7 @@ void test_update_setters() {
     TEST_ASSERT_EQUAL_FLOAT(DIRECTION, data.Location.Direction);
     TEST_ASSERT_EQUAL_FLOAT(SPEED_HORIZONTAL, data.Location.SpeedHorizontal);
     TEST_ASSERT_EQUAL_FLOAT(SPEED_VERTICAL, data.Location.SpeedVertical);
+    TEST_ASSERT_EQUAL_FLOAT(TIMESTAMP, data.Location.TimeStamp);
 
     TEST_ASSERT_EQUAL(ODID_OPERATOR_LOCATION_TYPE_TAKEOFF, data.System.OperatorLocationType);
     TEST_ASSERT_EQUAL_DOUBLE(OPERATOR_LAT, data.System.OperatorLatitude);
@@ -870,6 +875,56 @@ void test_update_setters() {
     // The dynamic setters mark their messages valid for the message pack.
     TEST_ASSERT_EQUAL(1, data.LocationValid);
     TEST_ASSERT_EQUAL(1, data.SystemValid);
+}
+
+// --- Location timestamp ----------------------------------------------------
+
+void test_location_timestamp_seconds_after_the_hour() {
+    // 2026-09-11T12:34:56.700Z -> 34 min 56.7 s past the hour.
+    TEST_ASSERT_EQUAL_FLOAT(TIMESTAMP, dri_location_timestamp(TIMESTAMP_UNIX_USEC));
+}
+
+void test_location_timestamp_no_utc_clock_is_unknown() {
+    // MAVLink reports time_unix_usec = 0 until the flight controller's RTC is
+    // set from GNSS: that is "no value", not the Unix epoch (which would
+    // otherwise encode as a valid 0.0 s past the hour).
+    TEST_ASSERT_EQUAL_FLOAT(INV_TIMESTAMP, dri_location_timestamp(0));
+}
+
+void test_location_timestamp_wraps_at_the_hour() {
+    // Exactly on the hour reads 0; a second before it reads 3599.
+    const uint64_t hour = 3600ULL * 1000000ULL;
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, dri_location_timestamp(1000ULL * hour));
+    TEST_ASSERT_EQUAL_FLOAT(3599.0f, dri_location_timestamp(1000ULL * hour - 1000000ULL));
+    TEST_ASSERT_EQUAL_FLOAT(0.1f, dri_location_timestamp(1000ULL * hour + 100000ULL));
+}
+
+void test_location_timestamp_stays_in_encoder_range() {
+    // Whatever the epoch, the result must be a value encodeLocationMessage()
+    // accepts: 0 <= x <= MAX_TIMESTAMP, or the INV_TIMESTAMP sentinel.
+    const uint64_t probes[] = {
+        1ULL, 1789130096700000ULL, 1789130096700001ULL,
+        4102444800000000ULL, UINT64_MAX,
+    };
+    for (size_t i = 0; i < sizeof(probes) / sizeof(probes[0]); i++) {
+        float ts = dri_location_timestamp(probes[i]);
+        char msg[64];
+        snprintf(msg, sizeof(msg), "probe %zu", i);
+        TEST_ASSERT_TRUE_MESSAGE(ts >= 0 && ts <= MAX_TIMESTAMP, msg);
+
+        build_reference_data();
+        data.Location.TimeStamp = ts;
+        ODID_Message_encoded encoded;
+        TEST_ASSERT_TRUE_MESSAGE(dri_encode_slot(&data, 2, &encoded), msg);
+    }
+}
+
+void test_init_reports_unknown_timestamp() {
+    // odid_initLocationData() only memsets TimeStamp, so it would otherwise
+    // start at 0.0 - a *valid* "exactly on the hour" mark rather than
+    // "unknown". Until a SYSTEM_TIME arrives there is no UTC clock to report.
+    dri_init(&data, 1000);
+    TEST_ASSERT_EQUAL_FLOAT(INV_TIMESTAMP, data.Location.TimeStamp);
 }
 
 // --- Encoder rejection of out-of-range data --------------------------------
@@ -1002,6 +1057,7 @@ void test_encode_decode_round_trip() {
     // disagree.
     TEST_ASSERT_EQUAL_FLOAT(SPEED_HORIZONTAL, decoded.SpeedHorizontal);
     TEST_ASSERT_EQUAL_FLOAT(SPEED_VERTICAL, decoded.SpeedVertical);
+    TEST_ASSERT_EQUAL_FLOAT(TIMESTAMP, decoded.TimeStamp);
 }
 
 int main(int, char **) {
@@ -1057,6 +1113,11 @@ int main(int, char **) {
     RUN_TEST(test_populate_identity_max_length_op_id_and_desc);
     RUN_TEST(test_populate_identity_fields_are_independent);
     RUN_TEST(test_update_setters);
+    RUN_TEST(test_location_timestamp_seconds_after_the_hour);
+    RUN_TEST(test_location_timestamp_no_utc_clock_is_unknown);
+    RUN_TEST(test_location_timestamp_wraps_at_the_hour);
+    RUN_TEST(test_location_timestamp_stays_in_encoder_range);
+    RUN_TEST(test_init_reports_unknown_timestamp);
     RUN_TEST(test_encode_slot_rejects_out_of_range_direction);
     RUN_TEST(test_encode_slot_rejects_out_of_range_height);
     RUN_TEST(test_encode_slot_rejects_out_of_range_altitude);

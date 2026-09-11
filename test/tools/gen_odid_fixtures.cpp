@@ -27,6 +27,10 @@ static const float DIRECTION = 90.0;
 // ODID encoding steps, so these encodings are lossless.
 static const float SPEED_HORIZONTAL = 3.5;
 static const float SPEED_VERTICAL = 2.5;
+// UTC mark of the position: 2026-09-11T12:34:56.700Z, i.e. 2096.7 s after the
+// full hour - the armed_fix MAVLink fixture's SYSTEM_TIME, exactly
+// representable in the encoder's tenths-of-a-second resolution.
+static const float TIMESTAMP = 2096.7;
 static const double OPERATOR_LAT = 47.3566000;
 static const double OPERATOR_LON = 8.5321000;
 static const double OPERATOR_ALT_GEO = 500.0;
@@ -66,6 +70,7 @@ int main() {
     data.Location.Direction = DIRECTION;
     data.Location.SpeedHorizontal = SPEED_HORIZONTAL;
     data.Location.SpeedVertical = SPEED_VERTICAL;
+    data.Location.TimeStamp = TIMESTAMP;
     data.System.OperatorLocationType = ODID_OPERATOR_LOCATION_TYPE_TAKEOFF;
     data.System.OperatorLatitude = OPERATOR_LAT;
     data.System.OperatorLongitude = OPERATOR_LON;
@@ -99,7 +104,9 @@ int main() {
     // raw 655.35 deg / 2147483 m values, which it rejects outright. The
     // speeds stay *valid* here on purpose: that fixture only zeroes out the
     // course and the altitudes, so a guard that also wiped the speeds would
-    // show up as a mismatch.
+    // show up as a mismatch. The UTC mark likewise survives: the e2e
+    // narrative replays armed_fix (which carries the SYSTEM_TIME) before
+    // armed_unknown, and the clock does not become unknown again.
     data.Location.Direction = INV_DIR;
     data.Location.AltitudeGeo = INV_ALT;
     data.Location.Height = INV_ALT;

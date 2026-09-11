@@ -58,6 +58,9 @@ void test_disarmed_fix_stream() {
     TEST_ASSERT_EQUAL(18000, state.global_position_int.hdg);       // 180 deg yaw
 
     TEST_ASSERT_EQUAL(MAV_STATE_STANDBY, state.heartbeat.system_status);
+    // No SYSTEM_TIME in this stream: the UTC clock stays unset, which
+    // main.cpp must report as an unknown timestamp rather than the epoch.
+    TEST_ASSERT_EQUAL_UINT64(0, state.system_time.time_unix_usec);
 }
 
 void test_armed_no_fix_stream() {
@@ -78,16 +81,19 @@ void test_armed_fix_stream() {
     mavlink_type_t seen[8];
     size_t count = feed(capture("armed_fix"), seen, 8);
 
-    TEST_ASSERT_EQUAL(3, count);
+    TEST_ASSERT_EQUAL(4, count);
     TEST_ASSERT_EQUAL(GPS_RAW_INT, seen[0]);
     TEST_ASSERT_EQUAL(HEARTBEAT, seen[1]);
-    TEST_ASSERT_EQUAL(GLOBAL_POSITION_INT, seen[2]);
+    TEST_ASSERT_EQUAL(SYSTEM_TIME, seen[2]);
+    TEST_ASSERT_EQUAL(GLOBAL_POSITION_INT, seen[3]);
 
     TEST_ASSERT_EQUAL(3, state.gps_raw_int.fix_type);              // 3D fix
     TEST_ASSERT_EQUAL(MAV_STATE_ACTIVE, state.heartbeat.system_status);
     TEST_ASSERT_EQUAL(MAV_MODE_FLAG_SAFETY_ARMED, state.heartbeat.base_mode);
     TEST_ASSERT_EQUAL(9000, state.gps_raw_int.cog);                // 90 deg course
     TEST_ASSERT_EQUAL(350, state.gps_raw_int.vel);                 // 3.5 m/s ground speed
+    // 2026-09-11T12:34:56.700Z: the UTC mark DRIFT has no other source for.
+    TEST_ASSERT_EQUAL_UINT64(1789130096700000ULL, state.system_time.time_unix_usec);
     TEST_ASSERT_EQUAL(473566123, state.global_position_int.lat);
     TEST_ASSERT_EQUAL(85321456, state.global_position_int.lon);
     TEST_ASSERT_EQUAL(500500, state.global_position_int.alt);      // 500.5 m

@@ -29,6 +29,10 @@ def unknown_telemetry(t):
     # a +2.5 m/s climb, not a descent.
     t.check("odid_state.Location.SpeedHorizontal", 3.5, tol=1e-3)
     t.check("odid_state.Location.SpeedVertical", 2.5, tol=1e-3)
+    # So does the UTC mark: the broadcast scenario's armed_fix replay set the
+    # clock earlier in this shared boot, and an out-of-range course does not
+    # make the clock unknown again.
+    t.check("odid_state.Location.TimeStamp", 2096.7, tol=1e-2)
 
     # ... and the broadcast location slots carry a real, valid message with
     # the unknown sentinels - not zeros, and not a skipped schedule.

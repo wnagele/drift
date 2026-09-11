@@ -8,6 +8,7 @@ typedef struct {
     mavlink_global_position_int_t global_position_int;
     mavlink_gps_raw_int_t gps_raw_int;
     mavlink_gps_global_origin_t gps_global_origin;
+    mavlink_system_time_t system_time;
 } mavlink_state_t;
 
 typedef enum mavlink_type {
@@ -15,6 +16,7 @@ typedef enum mavlink_type {
     GLOBAL_POSITION_INT = MAVLINK_MSG_ID_GLOBAL_POSITION_INT,
     GPS_RAW_INT = MAVLINK_MSG_ID_GPS_RAW_INT,
     GPS_GLOBAL_ORIGIN = MAVLINK_MSG_ID_GPS_GLOBAL_ORIGIN,
+    SYSTEM_TIME = MAVLINK_MSG_ID_SYSTEM_TIME,
     NONE,
 } mavlink_type_t;
 

@@ -138,6 +138,13 @@ void loop() {
             float alt = mavlink_state.global_position_int.alt / (float)1000;
             if (alt < MIN_ALT || alt > MAX_ALT)
                 alt = INV_ALT;                // out of ODID range: report "unknown"
+            // The UTC mark of the position source output. Unlike height,
+            // course and speed this is not arm-gated: it timestamps the
+            // position, which is broadcast on the ground too. The flight
+            // controller's own UTC clock is the only source - DRIFT has no
+            // RTC - so it stays "unknown" until a SYSTEM_TIME arrives.
+            float timestamp = dri_location_timestamp(
+                mavlink_state.system_time.time_unix_usec);
             dri_update_location(
                 &odid_state,
                 mavlink_state.global_position_int.lat / (double)10000000,
@@ -146,7 +153,8 @@ void loop() {
                 relative_alt,
                 direction,
                 speed_horizontal,
-                speed_vertical
+                speed_vertical,
+                timestamp
             );
             status_gnss_rcvd();
             break;

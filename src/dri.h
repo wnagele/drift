@@ -70,9 +70,16 @@ bool dri_wifi_nan_due(unsigned long last_due, unsigned long now);
 void dri_init(ODID_UAS_Data *data, unsigned long now);
 void dri_transmit(ODID_UAS_Data *data, unsigned long now);
 void dri_update_status(ODID_UAS_Data *data, ODID_status_t status);
+// Seconds after the full hour relative to UTC, the unit ASTM F3411 wants in
+// Location.TimeStamp, from a MAVLink SYSTEM_TIME.time_unix_usec. Returns the
+// ODID "unknown" sentinel when the flight controller has no UTC clock yet
+// (MAVLink reports time_unix_usec = 0 until the GNSS receiver sets it).
+float dri_location_timestamp(uint64_t unix_usec);
+
 // `direction` is the course over ground (track) in degrees from true North,
 // not the airframe's yaw; `speed_horizontal` is ground speed in m/s and
-// `speed_vertical` is m/s with up positive - see ODID_Location_data.
+// `speed_vertical` is m/s with up positive; `timestamp` is seconds after the
+// full hour UTC - see ODID_Location_data.
 void dri_update_location(
     ODID_UAS_Data *data,
     double latitude,
@@ -81,7 +88,8 @@ void dri_update_location(
     double relative_alt,
     float direction,
     float speed_horizontal,
-    float speed_vertical
+    float speed_vertical,
+    float timestamp
 );
 void dri_update_operator(
     ODID_UAS_Data *data,
