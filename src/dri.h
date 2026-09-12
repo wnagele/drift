@@ -10,7 +10,7 @@
 // non-connectable advertising shall not be configured faster than
 // 0x00A0 = 100 ms — DRIFT previously ran 20 ms, five times below the
 // floor), and a cadence that services the F3411 message-rate requirements
-// with margin: 10 slots/s carry Location at 2.5 Hz (spec: >= 1 Hz, <= 1 s
+// with margin: 10 slots/s carry Location at 4 Hz (spec: >= 1 Hz, <= 1 s
 // freshness), Basic ID and System at 2 Hz (FAA/Japan: 1 Hz), Self-ID and
 // Operator ID at 1 Hz (baseline: every 3 s). The BLE advertising interval
 // equals the slot interval, so each payload is advertised exactly once.
@@ -52,7 +52,8 @@
 bool dri_due(unsigned long last_due, unsigned long now);
 uint8_t dri_counter_next(uint8_t schedule_counter);
 uint8_t dri_slot_type(uint8_t schedule_counter);
-// Encode one schedule slot. Returns false when the vendored encoder rejects
+// Encode one schedule slot. Returns false when the slot's message is not
+// marked valid (nothing configured yet) or when the vendored encoder rejects
 // the data (e.g. out-of-range telemetry): the caller must then skip the slot
 // instead of broadcasting the pre-zeroed buffer.
 bool dri_encode_slot(ODID_UAS_Data *data, uint8_t schedule_counter, ODID_Message_encoded *out);

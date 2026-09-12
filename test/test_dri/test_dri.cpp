@@ -1129,6 +1129,103 @@ void test_transmit_skips_unencodable_slot() {
         TEST_ASSERT_EQUAL(ble_send_counters[i - 1] + 1, ble_send_counters[i]);
 }
 
+// --- Slot gating on the *Valid flags ---------------------------------------
+
+// The per-message encoders succeed on zeroed data (they range-check only
+// their type enums), so the schedule cannot rely on them to notice that
+// nothing has been configured: dri_encode_slot() consults the same *Valid
+// flags the message pack is composed from.
+
+void test_encode_slot_skips_messages_that_are_not_valid() {
+    // A factory-blank device: only the location is valid from power-on, so
+    // the six identity/system slots must report nothing to broadcast while
+    // the four location slots still encode.
+    dri_init(&data, 1000);
+    ODID_Message_encoded encoded;
+    const uint8_t invalid[] = { 1, 3, 5, 7, 9, 10 };
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        char msg[64];
+        snprintf(msg, sizeof(msg), "slot %u", invalid[i]);
+        TEST_ASSERT_FALSE_MESSAGE(dri_encode_slot(&data, invalid[i], &encoded), msg);
+    }
+    const uint8_t valid[] = { 2, 4, 6, 8 };
+    for (size_t i = 0; i < sizeof(valid) / sizeof(valid[0]); i++) {
+        char msg[64];
+        snprintf(msg, sizeof(msg), "slot %u", valid[i]);
+        TEST_ASSERT_TRUE_MESSAGE(dri_encode_slot(&data, valid[i], &encoded), msg);
+    }
+}
+
+void test_encode_slot_gating_follows_each_flag_independently() {
+    // Only a serial configured: the Basic ID slots join the broadcast and
+    // the Self-ID and Operator ID slots stay out. Without the gate all three
+    // would go out, the latter two carrying an empty string.
+    dri_init(&data, 1000);
+    dri_populate_identity(&data, UA_ID, "", "");
+    ODID_Message_encoded encoded;
+    TEST_ASSERT_TRUE(dri_encode_slot(&data, 1, &encoded));
+    TEST_ASSERT_FALSE(dri_encode_slot(&data, 5, &encoded));
+    TEST_ASSERT_FALSE(dri_encode_slot(&data, 10, &encoded));
+
+    // System rides the take-off origin, not the identity.
+    TEST_ASSERT_FALSE(dri_encode_slot(&data, 3, &encoded));
+    dri_update_operator(&data, OPERATOR_LAT, OPERATOR_LON, OPERATOR_ALT_GEO);
+    TEST_ASSERT_TRUE(dri_encode_slot(&data, 3, &encoded));
+}
+
+void test_encode_slot_gating_agrees_with_the_message_pack() {
+    // The two broadcast paths must carry the same set of messages: whatever
+    // the pack builder leaves out, the slot schedule skips. Asserted on a
+    // half-configured device, where the two used to disagree.
+    dri_init(&data, 1000);
+    dri_populate_identity(&data, UA_ID, "", UA_DESC);
+    uint8_t buf[DRI_PACK_MAX_SIZE];
+    int len = dri_build_pack(&data, buf, sizeof(buf));
+    TEST_ASSERT_TRUE(len > 0);
+
+    // Every message type the pack carries, by header byte.
+    bool packed[16] = { false };
+    for (int i = 0; i < buf[2]; i++)
+        packed[buf[3 + i * ODID_MESSAGE_SIZE] >> 4] = true;
+
+    ODID_Message_encoded encoded;
+    for (uint8_t slot = 1; slot <= DRI_SCHEDULE_PERIOD; slot++) {
+        bool encoded_ok = dri_encode_slot(&data, slot, &encoded);
+        char msg[64];
+        snprintf(msg, sizeof(msg), "slot %u", slot);
+        if (encoded_ok) {
+            TEST_ASSERT_TRUE_MESSAGE(packed[encoded.rawData[0] >> 4], msg);
+        } else {
+            // The pack must not carry a message the schedule refused. Both
+            // lists are message types, so compare through dri_slot_type().
+            static const uint8_t slot_message_type[5] = {
+                ODID_MESSAGETYPE_BASIC_ID, ODID_MESSAGETYPE_SELF_ID,
+                ODID_MESSAGETYPE_OPERATOR_ID, ODID_MESSAGETYPE_SYSTEM,
+                ODID_MESSAGETYPE_LOCATION,
+            };
+            TEST_ASSERT_FALSE_MESSAGE(packed[slot_message_type[dri_slot_type(slot)]], msg);
+        }
+    }
+}
+
+void test_transmit_skips_unconfigured_slots() {
+    // End to end on a factory-blank device: two full cycles put four
+    // location messages per cycle on the air and nothing else, with the
+    // message counter advancing only per emitted message.
+    dri_init(&data, 1000);
+    ble_send_reset();
+
+    unsigned long now = 1000;
+    for (int i = 0; i < 20; i++)  // two full 10-slot cycles
+        dri_transmit(&data, now += 110);
+
+    TEST_ASSERT_EQUAL(8, ble_send_count);
+    for (int i = 0; i < 8; i++)
+        TEST_ASSERT_EQUAL(ODID_MESSAGETYPE_LOCATION, ble_send_messages[i].rawData[0] >> 4);
+    for (int i = 1; i < 8; i++)
+        TEST_ASSERT_EQUAL(ble_send_counters[i - 1] + 1, ble_send_counters[i]);
+}
+
 // --- Decode round trip ----------------------------------------------------
 
 void test_encode_decode_round_trip() {
@@ -1222,6 +1319,10 @@ int main(int, char **) {
     RUN_TEST(test_encode_slot_unknown_sentinels_encode);
     RUN_TEST(test_transmit_gating_schedule_and_counters);
     RUN_TEST(test_transmit_skips_unencodable_slot);
+    RUN_TEST(test_encode_slot_skips_messages_that_are_not_valid);
+    RUN_TEST(test_encode_slot_gating_follows_each_flag_independently);
+    RUN_TEST(test_encode_slot_gating_agrees_with_the_message_pack);
+    RUN_TEST(test_transmit_skips_unconfigured_slots);
     RUN_TEST(test_encode_decode_round_trip);
     return UNITY_END();
 }
