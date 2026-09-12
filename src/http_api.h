@@ -39,7 +39,9 @@ void http_api_init(const uint8_t *dash, size_t dash_len);
 HttpApiResponse http_api_get(const char *path);
 
 // POST /api/config. `body` is the NUL-terminated JSON document (NULL for a
-// bodiless POST, which the API rejects with 400).
+// bodiless POST). The document must be a *complete* configuration; 400 with
+// no write and no reboot on a bodiless POST, malformed JSON, a missing or
+// wrong-typed field, or an unknown region (see config.h).
 HttpApiResponse http_api_post_config(const char *body);
 
 #endif

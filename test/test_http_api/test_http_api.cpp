@@ -38,7 +38,7 @@ static const ConfigStorage mem_storage = { mem_isKey, mem_getString, mem_putStri
 void setUp() {
     kv.clear();
     ArduinoFakeReset();
-    // config_save() logs to Serial on malformed JSON.
+    // config_save() logs to Serial on every rejection.
     When(OverloadedMethod(ArduinoFake(Serial), println, size_t(const char *))).AlwaysReturn(1);
     http_api_init(FAKE_DASH, sizeof(FAKE_DASH));
     config_init(&mem_storage, "DRIFT_ABCD");
@@ -48,7 +48,9 @@ void test_get_root_serves_the_dash_blob_gzipped() {
     HttpApiResponse r = http_api_get(HTTP_API_ROOT);
     TEST_ASSERT_TRUE(r.handled);
     TEST_ASSERT_EQUAL(200, r.status);
-    TEST_ASSERT_EQUAL_STRING("text/html", r.content_type);
+    // The charset is not decoration: without it the browser guesses, and
+    // antd's glyphs (U+2716 in the bundle) render as mojibake.
+    TEST_ASSERT_EQUAL_STRING("text/html; charset=utf-8", r.content_type);
     TEST_ASSERT_TRUE(r.gzip);
     TEST_ASSERT_EQUAL(r.body, FAKE_DASH);
     TEST_ASSERT_EQUAL(sizeof(FAKE_DASH), r.body_len);
@@ -64,7 +66,7 @@ void test_get_api_config_matches_shared_fixture() {
     // replay. Firmware and dash are finally asserted against one source.
     std::string raw = fixture_read("api/config.json");
     TEST_ASSERT_FALSE(raw.empty());
-    config_save(String(raw.c_str()));
+    TEST_ASSERT_TRUE(config_save(String(raw.c_str())));
 
     HttpApiResponse r = http_api_get(HTTP_API_CONFIG);
     TEST_ASSERT_TRUE(r.handled);
@@ -123,6 +125,32 @@ void test_post_config_without_body_is_rejected() {
     TEST_ASSERT_EQUAL_STRING("DRIFT_ABCD", config_wifi_ssid().c_str());  // untouched
 }
 
+// A document config_save() refuses must surface as 400 and must *not*
+// restart. Until this test existed, any body that failed to save still
+// answered 200 and rebooted, which is indistinguishable from success to a
+// client - and the reboot exists solely to re-read an identity that in this
+// case did not change.
+void test_post_config_with_a_rejected_body_is_400_and_does_not_restart() {
+    const char *const bodies[] = {
+        "this is not json {{",                     // malformed
+        "{}",                                      // empty document
+        "{\"wifi\":{\"ssid\":\"X\"}}",             // partial: no dri section
+        "{\"wifi\":{\"ssid\":\"X\",\"password\":\"\"},"
+        "\"dri\":{\"region\":\"XX\",\"ua_id\":\"\",\"ua_desc\":\"\",\"op_id\":\"\","
+        "\"op_secret\":\"\","
+        "\"bt5_enabled\":true,\"wifi_beacon_enabled\":true,"
+        "\"wifi_nan_enabled\":false}}",            // complete but unknown region
+    };
+    for (const char *body : bodies) {
+        HttpApiResponse r = http_api_post_config(body);
+        TEST_ASSERT_TRUE_MESSAGE(r.handled, body);
+        TEST_ASSERT_EQUAL_MESSAGE(400, r.status, body);
+        TEST_ASSERT_FALSE_MESSAGE(r.restart_after, body);
+        // config_init()'s default SSID is still in place: nothing was written.
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("DRIFT_ABCD", config_wifi_ssid().c_str(), body);
+    }
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_get_root_serves_the_dash_blob_gzipped);
@@ -131,5 +159,6 @@ int main(int, char **) {
     RUN_TEST(test_get_unknown_path_is_not_handled);
     RUN_TEST(test_post_config_saves_and_restarts);
     RUN_TEST(test_post_config_without_body_is_rejected);
+    RUN_TEST(test_post_config_with_a_rejected_body_is_400_and_does_not_restart);
     return UNITY_END();
 }

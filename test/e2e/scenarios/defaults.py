@@ -44,6 +44,14 @@ def defaults(t):
     t.check_eq("dri_op_id defaults to empty",
                t.read_arduino_string("config_dri_op_id()"), "")
 
+    # dri_region is deliberately absent from this list. It defaults to "" too
+    # (pinned natively by test_config), but nothing in the firmware ever calls
+    # config_dri_region() - the region is opaque to it, served only to the
+    # dash - so the linker drops the symbol and gdb cannot evaluate it here.
+    # That is the design working as intended, not a coverage gap to plug: the
+    # alternative is a fake call site in main.cpp purely to keep a symbol
+    # alive for a test.
+
     # The BLE5 transport defaults to on (pinned natively by test_config;
     # this pins the write through the real NVS backend).
     t.check_eq("bt5_enabled defaults to on", t.eval("config_bt5_enabled()"), 1)

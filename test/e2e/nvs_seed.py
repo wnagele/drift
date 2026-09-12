@@ -37,6 +37,12 @@ def main():
         ["dri_ua_id", "data", "string", config["dri"]["ua_id"]],
         ["dri_ua_desc", "data", "string", config["dri"]["ua_desc"]],
         ["dri_op_id", "data", "string", config["dri"]["op_id"]],
+        # The EU/UK verification code, stored apart from the registration
+        # number so it cannot reach the wire (config.h).
+        ["dri_op_secret", "data", "string", config["dri"]["op_secret"]],
+        # Opaque to the firmware - stored and served back to the dash, never
+        # branched on (config.h).
+        ["dri_region", "data", "string", config["dri"]["region"]],
         # Booleans ride the string-only storage seam as "1"/"0" (config.cpp).
         ["bt5_enabled", "data", "string", "1" if config["dri"]["bt5_enabled"] else "0"],
         # NVS keys are capped at 15 characters, so the stored key is the

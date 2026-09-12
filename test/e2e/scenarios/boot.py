@@ -29,3 +29,7 @@ def boot(t):
                t.read_string("odid_state.OperatorID.OperatorId"), CONFIG["dri"]["op_id"])
     t.check("odid_state.OperatorID.OperatorIdType", "ODID_OPERATOR_ID")
     t.check("odid_state.SelfID.DescType", "ODID_DESC_TYPE_TEXT")
+    # The seeded region is intentionally not asserted: it appears nowhere in
+    # odid_state because it never goes on the wire, and config_dri_region()
+    # is linked out of this build since the firmware never calls it. See the
+    # note in scenarios/defaults.py.
