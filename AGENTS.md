@@ -74,13 +74,21 @@ not counted, so frames:messages is 1:N on every transport; counted in `dri.cpp` 
 send seams, enable-gated by the config flags wired through `txcount_init()`, sampled by
 `txcount_sample(millis())` from the main loop). The dash derives its own
 health from that cadence: App owns one `/ws` connection
-(`useStatusSocket`), the sidebar carries a connection box (green Connected /
-orange Connecting or No data / red Disconnected, with the last update age;
-collapses to a dot on narrow screens), the Status view carries the
-telemetry/GNSS flags and the Statistics view the per-transport transmit-rate
-table — an open-but-silent socket
-(no status message for 5 s) is flagged "No data" so a wedged link shows up
-instead of freezing the flags.
+(`useStatusSocket`) and passes it to two consumers. The **sidebar** carries
+the whole health block (`SidebarHealth`): a connection box (green Connected /
+orange Connecting or No data / red Disconnected, with the last update age)
+plus the telemetry and GNSS flags (green/red, orange until the first status
+message — never red, which would claim a fault the device has not reported).
+All three are the same `StatusBox`, they are in the sider so they stay visible
+from every tab, and on narrow screens (antd's `md` breakpoint) the block
+collapses to one identity icon plus a state dot each, with the text in a
+native tooltip — the icon is what keeps the collapsed block legible, since
+three bare dots carry colour but no identity. An open-but-silent socket (no status message for 5 s) is
+flagged "No data" so a wedged link shows up instead of freezing the flags.
+The **Status view** is what the device puts on air — today the per-transport
+transmit-rate table, and the home for the broadcast values next. There are two
+menu entries only, Status and Config; the old three-view split (flags on
+Status, rates on Statistics) is gone.
 
 Module map: `main.cpp` (wiring, the only MAVLink→ODID mapping),
 `betaflight_mavlink` (ingest), `dri` (ODID + all four broadcast schedules),

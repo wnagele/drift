@@ -32,12 +32,21 @@ body,
     padding: 5px;
 }
 
-/* Status box in the left navigation: background tint + border carry the
- * overall health (worst of connection / telemetry / GNSS); the leading dot
- * on the connection line carries that row's own state. Colors match antd's
- * palette (green #52c41a, gold #faad14, red #f5222d). */
+/* Health block in the left navigation (SidebarHealth.js): link health plus
+ * the device-health flags, stacked between the brand and the menu. The boxes
+ * carry their own bottom margin, so the block only needs to group them. */
+.status-boxes {
+    margin-bottom: 12px;
+}
+
+/* Health box, shared by every indicator in that block (StatusBox.js): the
+ * background tint and border carry the state, the leading dot repeats it so
+ * the box is readable without relying on colour alone. Colors match antd's
+ * palette (green #52c41a, gold #faad14, red #f5222d). Styled for the dark
+ * sider, the only place these are rendered — hence the light text and the
+ * side margins that keep them aligned with the menu items below. */
 .status-box {
-    margin: 0 10px 12px 10px;
+    margin: 0 10px 8px 10px;
     padding: 10px;
     border-radius: 6px;
     border: 1px solid transparent;
@@ -51,8 +60,9 @@ body,
 .status-box-detail {
     color: rgba(255, 255, 255, 0.55);
     font-size: 11px;
-    padding-left: 14px;   /* align under the state word, past the dot */
+    padding-left: 14px;   /* align under the label, past the dot */
 }
+
 .status-dot {
     display: inline-block;
     width: 8px;
@@ -64,11 +74,28 @@ body,
 .status-dot-degraded { background: #faad14; }
 .status-dot-down     { background: #f5222d; }
 
-/* Collapsed sider (small screens): the box shrinks to a single dot of the
- * overall color; the native tooltip carries the details. */
+/* Collapsed sider (small screens): every box shrinks to its icon plus its
+ * state dot and the block becomes a tight vertical stack; the native
+ * tooltips carry the text. The icon is the identity, the dot is the state —
+ * three bare dots would be all colour and no identity. */
+.status-boxes-collapsed {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 0;
+}
 .status-box-collapsed {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    margin: 12px auto 12px auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 15px;
+    line-height: 1;
+}
+/* The shared dot carries a right margin for the expanded label; here the
+ * flex gap does the spacing instead. */
+.status-box-collapsed .status-dot {
+    margin-right: 0;
 }

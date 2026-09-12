@@ -144,21 +144,27 @@ Saving the configuration makes the module reboot itself to apply the new setting
 
 1. Connect to your module via WiFi (default SSID is `DRIFT_<chipid>`).
 2. Open a browser and go to the dashboard at [http://drift.local](http://drift.local).
-3. The connection box in the sidebar shows the health of the link between dashboard and module:
-   green *Connected* with the age of the last update, orange *Connecting* / *No data*
-   (the link is up, but no updates arrive — a wedged connection is reported instead of
-   the display silently freezing), or red *Disconnected*.
-4. The `Status` tab of the dashboard shows you if all necessary data is properly received:
-   - **Telemetry** — the flight controller is sending MAVLink messages.
-   - **GNSS** — a valid position fix is available.
+3. The sidebar shows three health indicators, which stay visible whichever tab you
+   are on:
+   - **Connection** — the health of the link between dashboard and module: green
+     *Connected* with the age of the last update, orange *Connecting* / *No data*
+     (the link is up, but no updates arrive — a wedged connection is reported instead
+     of the display silently freezing), or red *Disconnected*.
+   - **Telemetry** — green once the flight controller is sending MAVLink messages.
+   - **GNSS** — green once a valid position fix is available. Make sure your drone has
+     a proper 3D position fix in your Flight Controller.
 
-   For the GNSS status make sure your drone has a proper 3D position fix in your Flight Controller.
-5. The `Statistics` tab shows the Remote ID transmit rates the module itself schedules,
+   Both device indicators start orange rather than red: until the first update arrives
+   the module has not reported anything either way. On a narrow screen the sidebar
+   folds and each box shrinks to its icon — a plug for the connection, a gauge for
+   telemetry, a map pin for GNSS — with the same coloured dot beside it. Hover one
+   for the full text.
+4. The `Status` tab shows the Remote ID transmit rates the module itself schedules,
    per transport as *Frames/s* and *Messages/s*. In a healthy steady state expect
    Bluetooth 4 at ~10 frames/s, Bluetooth 5 Long Range at ~1 frame/s, Wi-Fi Beacon at
    ~5 frames/s and Wi-Fi NAN at ~2 frames/s (only while enabled — a disabled transport stays at zero).
    The *Messages/s* value grows as more of the broadcast content becomes available, e.g. once GNSS origin data arrives.
-6. To verify the DRI broadcasts over the air we recommend the free *Drone Scanner* app ([Android](https://play.google.com/store/apps/details?id=cz.dronetag.dronescanner), [iOS](https://apps.apple.com/gb/app/drone-scanner/id1644548782)).
+5. To verify the DRI broadcasts over the air we recommend the free *Drone Scanner* app ([Android](https://play.google.com/store/apps/details?id=cz.dronetag.dronescanner), [iOS](https://apps.apple.com/gb/app/drone-scanner/id1644548782)).
 
 {: .note }
 Receiver support differs per transport, see [Broadcasting](/broadcasting/): Apple devices

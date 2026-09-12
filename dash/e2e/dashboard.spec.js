@@ -30,41 +30,87 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('connection box and status view reflect websocket status messages', async ({ page }) => {
+test('sidebar health block and status view reflect websocket status messages', async ({ page }) => {
   await page.routeWebSocket('**/ws', (ws) => {
     // Push the recorded device status once the app connects.
     setTimeout(() => ws.send(JSON.stringify(statusFixture)), 100);
   });
 
   await page.goto('/');
-  // Sidebar connection box: green while the stream flows, with the age of
-  // the most recent update.
-  const box = page.locator('.status-box');
-  await expect(box).toHaveClass(/status-box-ok/);
-  await expect(box).toContainText('Connected');
-  await expect(box.locator('.status-box-detail')).toContainText(/updated \d+s ago/);
-  // Status view (default tab) carries the flags only — no connection row.
-  const telemetryRow = page.locator('.ant-row', { hasText: 'Telemetry' });
-  const gnssRow = page.locator('.ant-row', { hasText: 'GNSS' });
-  await expect(page.locator('.ant-row', { hasText: 'Connection' })).toHaveCount(0);
+  // The sidebar carries all three indicators, so every box has to be located
+  // by its own label rather than by a bare class.
+  const health = page.locator('.status-box');
+  const box = (label) => health.filter({ has: page.getByText(label, { exact: true }) });
+  await expect(health).toHaveCount(3);
+
+  // Connection: green while the stream flows, with the age of the most
+  // recent update.
+  const connection = box('Connected');
+  await expect(connection).toHaveClass(/status-box-ok/);
+  await expect(connection.locator('.status-box-detail')).toContainText(/updated \d+s ago/);
+
   // The fixture is asymmetric (telemetry up, gnss down), so a telemetry/gnss
   // swap anywhere fails loudly instead of cancelling out.
-  await expect(telemetryRow.locator('.anticon-check-circle')).toBeVisible();
-  await expect(telemetryRow.locator('.anticon-close-circle')).toHaveCount(0);
-  await expect(gnssRow.locator('.anticon-close-circle')).toBeVisible();
-  await expect(gnssRow.locator('.anticon-check-circle')).toHaveCount(0);
-  // GNSS being down degrades the flags, not the connection box.
-  await expect(box).not.toHaveClass(/status-box-degraded/);
+  const telemetry = box('Telemetry');
+  const gnss = box('GNSS');
+  await expect(telemetry).toHaveClass(/status-box-ok/);
+  await expect(telemetry.locator('.status-dot-ok')).toBeVisible();
+  await expect(gnss).toHaveClass(/status-box-down/);
+  await expect(gnss.locator('.status-dot-down')).toBeVisible();
+  // A failed device flag is not a link failure — the connection box stays green.
+  await expect(connection).not.toHaveClass(/status-box-degraded/);
 
-  // The Statistics tab carries the per-transport transmit-rate table, fed by
-  // the same websocket stream (txcount.cpp diagnostics).
-  await page.getByRole('menuitem', { name: 'Statistics' }).click();
+  // The Status tab (the default) carries the per-transport transmit-rate
+  // table, fed by the same websocket stream (txcount.cpp diagnostics).
   const rates = page.locator('.ant-table');
   await expect(rates).toContainText('Bluetooth 4 legacy');
   await expect(rates).toContainText('Bluetooth 5 Long Range');
   await expect(rates).toContainText('Wi-Fi Beacon');
   await expect(rates).toContainText('Wi-Fi NAN');
   await expect(rates).toContainText('10');
+
+  // The health block survives a tab switch, which is the whole point of it
+  // living in the sider.
+  await page.getByRole('menuitem', { name: 'Config' }).click();
+  await expect(health).toHaveCount(3);
+  await expect(box('Connected')).toHaveClass(/status-box-ok/);
+});
+
+test('a narrow viewport collapses the health block to icons and dots', async ({ page }) => {
+  // antd's Sider breakpoint="md" (768px) is a real-browser media query, so
+  // this collapse cannot be exercised in jsdom — it only exists here.
+  await page.routeWebSocket('**/ws', (ws) => {
+    setTimeout(() => ws.send(JSON.stringify(statusFixture)), 100);
+  });
+
+  await page.setViewportSize({ width: 600, height: 800 });
+  await page.goto('/');
+
+  // No boxes at all, and no label text: the sider is too narrow for either.
+  await expect(page.locator('.status-box')).toHaveCount(0);
+  const items = page.locator('.status-box-collapsed');
+  await expect(items).toHaveCount(3);
+
+  // Each item keeps an identity icon, so the block is readable without
+  // hovering — three bare dots would be all colour and no identity.
+  await expect(items.nth(0).locator('.anticon-api')).toBeVisible();
+  await expect(items.nth(1).locator('.anticon-dashboard')).toBeVisible();
+  await expect(items.nth(2).locator('.anticon-environment')).toBeVisible();
+
+  // …and the asymmetric fixture still shows through the dots beside them.
+  await expect(items.nth(0).locator('.status-dot-ok')).toBeVisible();
+  await expect(items.nth(1).locator('.status-dot-ok')).toBeVisible();
+  await expect(items.nth(2).locator('.status-dot-down')).toBeVisible();
+
+  // The tooltip is the only place the names survive, so it has to be there.
+  await expect(items.nth(1)).toHaveAttribute('title', 'Telemetry');
+  await expect(items.nth(2)).toHaveAttribute('title', 'GNSS');
+  await expect(items.nth(0)).toHaveAttribute('title', /^Connected · updated \d+s ago$/);
+
+  // Widening it again brings the full boxes back.
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await expect(page.locator('.status-box')).toHaveCount(3);
+  await expect(page.locator('.status-box-collapsed')).toHaveCount(0);
 });
 
 test('connection box flags a silent websocket as no-data', async ({ page }) => {
@@ -74,7 +120,8 @@ test('connection box flags a silent websocket as no-data', async ({ page }) => {
   await page.routeWebSocket('**/ws', (ws) => {});
 
   await page.goto('/');
-  const box = page.locator('.status-box');
+  const box = page.locator('.status-box')
+    .filter({ has: page.getByText('No data', { exact: true }) });
   await expect(box).toContainText('No data');
   await expect(box).toHaveClass(/status-box-degraded/);
   await expect(box.locator('.status-box-detail')).toContainText('no message yet');
@@ -93,7 +140,8 @@ test('connection box shows disconnection with its age', async ({ page }) => {
   });
 
   await page.goto('/');
-  const box = page.locator('.status-box');
+  const box = page.locator('.status-box')
+    .filter({ has: page.getByText('Disconnected', { exact: true }) });
   await expect(box).toContainText('Disconnected');
   await expect(box).toHaveClass(/status-box-down/);
   await expect(box.locator('.status-box-detail')).toContainText(/since \d+s ago/);
