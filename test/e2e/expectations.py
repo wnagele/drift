@@ -58,7 +58,7 @@ MAV_STATE_TO_ODID = {3: "ODID_STATUS_GROUND", 4: "ODID_STATUS_AIRBORNE",
 
 # dri_slot_type() maps the broadcast schedule counter onto a message type; the
 # first encoded byte is (message type << 4) | protocol version. The 10-slot
-# cycle allocates the F3411 message rates: Location 2.5 Hz, Basic ID and
+# cycle allocates the F3411 message rates: Location 4 Hz, Basic ID and
 # System 2 Hz (the FAA/Japan 1 Hz requirement), Self-ID and Operator ID 1 Hz
 # (against the 3 s baseline).
 SCHEDULE_TO_MESSAGE_TYPE = {1: "ODID_MESSAGETYPE_BASIC_ID",

@@ -44,7 +44,7 @@ uint8_t dri_counter_next(uint8_t schedule) {
 
 uint8_t dri_slot_type(uint8_t schedule) {
     // The 10-slot cycle allocates the F3411 message rates with margin
-    // (Location 2.5 Hz; Basic ID and System 2 Hz — the FAA/Japan 1 Hz
+    // (Location 4 Hz; Basic ID and System 2 Hz — the FAA/Japan 1 Hz
     // requirement; Self-ID and Operator ID 1 Hz against the 3 s baseline):
     //
     //   slot:    1     2        3      4        5       6        7     8        9      10
@@ -65,10 +65,36 @@ uint8_t dri_slot_type(uint8_t schedule) {
     }
 }
 
+// The *Valid flags the Message Pack is composed from, per slot type. The
+// per-message encoders cannot stand in for this: encodeBasicIDMessage(),
+// encodeSelfIDMessage() and encodeOperatorIDMessage() range-check only their
+// type enums and succeed on zeroed data, so an empty string is not an error
+// to them. Without this gate an unconfigured device broadcast a Basic ID
+// declaring no ID type and no serial twice a second, and an empty Operator ID
+// once a second - messages a receiver renders as a real aircraft that names
+// itself nothing - while the pack transports correctly left them out.
+static bool dri_slot_valid(const ODID_UAS_Data *data, uint8_t slot) {
+    switch (slot) {
+        case DRI_SLOT_BASIC_ID:
+            return data->BasicIDValid[0] != 0;
+        case DRI_SLOT_SELF_ID:
+            return data->SelfIDValid != 0;
+        case DRI_SLOT_OPERATOR_ID:
+            return data->OperatorIDValid != 0;
+        case DRI_SLOT_SYSTEM:
+            return data->SystemValid != 0;
+        default:
+            return data->LocationValid != 0;
+    }
+}
+
 bool dri_encode_slot(ODID_UAS_Data *data, uint8_t schedule, ODID_Message_encoded *out) {
     memset(out, 0, sizeof(ODID_Message_encoded));
+    uint8_t slot = dri_slot_type(schedule);
+    if (!dri_slot_valid(data, slot))
+        return false;
     int rc;
-    switch (dri_slot_type(schedule)) {
+    switch (slot) {
         case DRI_SLOT_BASIC_ID:
             rc = encodeBasicIDMessage((ODID_BasicID_encoded*) out, &data->BasicID[0]);
             break;
@@ -148,10 +174,11 @@ void dri_init(ODID_UAS_Data *data, unsigned long now) {
     data->System.AreaCeiling = 50;
     */
 
-    // The message pack (BLE5 transport) is composed from the *Valid flags.
-    // The location is part of the broadcast from power-on exactly like the
-    // BT4 schedule's location slots - odid_initUasData() has already filled
-    // it with the ODID "unknown" sentinels - while the identity and system
+    // Both broadcast paths are composed from the *Valid flags: the BT4 slot
+    // schedule skips a slot whose message is not valid, and the message pack
+    // (BT5 and both Wi-Fi transports) leaves it out. The location is part of
+    // the broadcast from power-on - odid_initUasData() has already filled it
+    // with the ODID "unknown" sentinels - while the identity and system
     // messages only join once their data arrives (dri_populate_identity(),
     // dri_update_operator()).
     data->LocationValid = 1;
@@ -232,7 +259,7 @@ void dri_transmit(ODID_UAS_Data *data, unsigned long now) {
 
     schedule_counter = dri_counter_next(schedule_counter);
     if (!dri_encode_slot(data, schedule_counter, &encoded))
-        return;  // encoder rejected the data: skip the slot rather than broadcast an empty message
+        return;  // nothing valid for this slot, or the encoder rejected the data: skip it rather than broadcast an empty message
     ble_send(msg_counter++, &encoded);
     txcount_bt4();
 }

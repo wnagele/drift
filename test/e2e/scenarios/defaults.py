@@ -1,5 +1,6 @@
 import os
 
+from expectations import ODID_VERSION
 from harness import scenario
 
 # Runs against the *defaults* flash image (factory-blank NVS partition, see
@@ -70,3 +71,17 @@ def defaults(t):
                t.read_string("odid_state.SelfID.Desc"), "")
     t.check_eq("no Operator ID on a factory boot",
                t.read_string("odid_state.OperatorID.OperatorId"), "")
+
+    # So nothing identifies this aircraft, and the BT4 schedule must say so by
+    # staying quiet in the six identity/system slots rather than advertising
+    # messages that declare nothing: the per-message encoders accept zeroed
+    # data (they range-check only their type enums), so dri_encode_slot()
+    # gates on the same *Valid flags the message pack is composed from. Only
+    # the location is valid from power-on - odid_initUasData() fills it with
+    # the ODID "unknown" sentinels - so a full cycle carries its four location
+    # slots and nothing else. This is the one boot that can see it: every
+    # other scenario runs against the pre-seeded identity.
+    location_header = (t.eval("ODID_MESSAGETYPE_LOCATION") << 4) | ODID_VERSION
+    sends = t.ble_sends(lambda records: len(records) >= 8)
+    t.check_eq("a factory boot broadcasts only location slots",
+               sorted({record[1][0] for record in sends[:8]}), [location_header])
