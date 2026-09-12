@@ -107,7 +107,14 @@ test('config save flow posts the edited config to the API', async ({ page }) => 
 
   await page.getByRole('menuitem', { name: /config/i }).click();
   await expect(page.getByLabel('WiFi SSID')).toHaveValue(configFixture.wifi.ssid);
-  await expect(page.getByLabel('Operator ID')).toHaveValue(configFixture.dri.op_id);
+  // The fixture is an EU device, so the operator field carries EASA's own
+  // label and shows the two stored halves rejoined into one value.
+  await expect(page.getByLabel('Operator Registration Number'))
+    .toHaveValue(`${configFixture.dri.op_id}-${configFixture.dri.op_secret}`);
+  // Both verification indicators read green for the fixture, whose checksum
+  // character is a real Luhn mod-36 over its random part plus secret digits.
+  await expect(page.getByText(/Syntax check passed/)).toBeVisible();
+  await expect(page.getByText(/Security check passed/)).toBeVisible();
 
   let postBody = null;
   await page.route('**/api/config', (route) => {
@@ -121,12 +128,16 @@ test('config save flow posts the edited config to the API', async ({ page }) => 
     return route.fulfill({ status: 200 });
   });
 
-  await page.getByLabel('Operator ID').fill('E2E-OPERATOR');
+  // Paste the full 20-character registration string, separators and all:
+  // the dash must split it so only the public half is posted as the
+  // broadcast value and the private key is stored apart.
+  await page.getByLabel('Operator Registration Number').fill('NOR drift0test01 h - abc');
   await page.getByRole('button', { name: 'Save' }).click();
 
   await expect(page.getByText('Config saved.')).toBeVisible();
   expect(postBody).not.toBeNull();
-  expect(postBody.dri.op_id).toEqual('E2E-OPERATOR');
+  expect(postBody.dri.op_id).toEqual('NORdrift0test01h');
+  expect(postBody.dri.op_secret).toEqual('abc');
   expect(postBody.wifi.ssid).toEqual(configFixture.wifi.ssid);
   expect(postBody.dri.bt5_enabled).toEqual(configFixture.dri.bt5_enabled);
   expect(postBody.dri.wifi_beacon_enabled).toEqual(configFixture.dri.wifi_beacon_enabled);

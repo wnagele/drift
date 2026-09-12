@@ -54,7 +54,11 @@ const server = http.createServer((req, res) => {
     };
 
     if (req.url === '/') {
-        res.writeHead(200, { 'Content-Type': 'text/html' });
+        // Same content type the firmware sends (http_api.cpp), charset
+        // included - without it the browser guesses and antd's glyphs
+        // render as mojibake, so `npm run dev` would not show what the
+        // device shows.
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(page);
     } else if (req.url === '/api/config' && req.method === 'GET') {
         json(fixture('config.json'));

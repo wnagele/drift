@@ -1,5 +1,12 @@
 <html>
     <head>
+        <!-- Without this the browser guesses the encoding and typically
+             falls back to a windows-1252-style default, which renders every
+             multi-byte UTF-8 character as mojibake - including antd's own
+             glyphs (the close/error icons are literal U+2716). The firmware
+             also sends charset=utf-8 on the response; the header wins, but
+             the meta tag keeps a locally opened index.html correct too. -->
+        <meta charset="utf-8">
         <title>DRIFT</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     </head>

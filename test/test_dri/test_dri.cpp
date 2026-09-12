@@ -16,7 +16,12 @@
 // a change to the generator's scenario needs a matching change here.
 
 static const char UA_ID[] = "1DRIFT000TEST00001";
-static const char OP_ID[] = "TEST-OPERATOR-1";
+// The 16-character EU/UK operator registration number. Its trailing "h" is
+// a real Luhn mod-36 checksum over the 12 random characters plus the
+// fixture's 3 secret digits ("abc"), so the shared API fixture is a
+// self-consistent document the dash's validator accepts. The secret digits
+// are never broadcast and so do not appear here.
+static const char OP_ID[] = "AUTdrift0test01h";
 static const char UA_DESC[] = "DRIFT test fixture";
 static const ODID_status_t STATUS = ODID_STATUS_AIRBORNE;
 static const double LAT = 47.3566123;

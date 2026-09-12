@@ -244,21 +244,118 @@ ODID (no maintained implementation exists).
 
 | Route | Response |
 | --- | --- |
-| `GET /` | gzipped `DASH` blob, `text/html` |
-| `GET /api/config` | `{wifi:{ssid,password},dri:{ua_id,ua_desc,op_id,bt5_enabled,wifi_beacon_enabled,wifi_nan_enabled}}` |
-| `POST /api/config` | 200 + reboot (identity is read once at boot); 400 with no body |
+| `GET /` | gzipped `DASH` blob, `text/html; charset=utf-8` |
+| `GET /api/config` | `{wifi:{ssid,password},dri:{region,ua_id,ua_desc,op_id,op_secret,bt5_enabled,wifi_beacon_enabled,wifi_nan_enabled}}` |
+| `POST /api/config` | 200 + reboot (identity is read once at boot); 400 on a bodiless POST, malformed JSON, a missing or wrong-typed field, or an unknown region |
 | `GET /debug/info` | `{version,git_ref,build_time}` (nulls in dev builds) |
 | `WS /ws` | `{type:"status",telemetry,gnss,tx:{bt4,bt5,wifi_beacon,wifi_nan}}` once per second; each `tx` transport is `{frames,messages}` per second over the last completed window |
 
+`POST /api/config` takes a **complete** configuration document: every field in
+the `GET` shape must be present and correctly typed (strings for the strings —
+empty is fine, `null` is not — and real JSON booleans for the three transport
+flags). Partial/delta applies are rejected, not merged. `config_save()`
+validates the whole document before the first `putString`, so a rejected POST
+writes nothing at all and does not reboot, and returns `false` for `http_api`
+to turn into the 400. This replaced two warts: a missing field used to be
+persisted as the literal string `"null"` (so `POST {}` wiped the identity and
+the SSID), and any body `config_save()` could not use still answered 200 and
+rebooted, which a client cannot tell from success.
+
 NVS keys (namespace `drift`): `wifi_ssid` (defaults to `DRIFT_xxxx` from the
 eFuse MAC, also used as the BLE device name), `wifi_password` (empty ⇒ open AP),
-`dri_ua_id` (≤20), `dri_ua_desc` (≤23), `dri_op_id` (≤20), `bt5_enabled`
-(`"1"`/`"0"`, default on; a missing/null/non-boolean POST field keeps it on),
-`wifi_beacon` (same encoding, default on, same missing-field rule; the API
-field is `wifi_beacon_enabled`), `wifi_nan` (same encoding, default **off**
-— the one opt-in transport, so the missing-field rule inverts: absent/null/
-non-boolean keeps it off; the API field is `wifi_nan_enabled`). Over-length
-DRI values are silently ignored by `dri_populate_identity()`.
+`dri_region`, `dri_ua_id` (≤20), `dri_ua_desc` (≤23), `dri_op_id` (≤20),
+`dri_op_secret` (the EU/UK verification code; never broadcast),
+`bt5_enabled` (`"1"`/`"0"`, default on), `wifi_beacon` (same encoding, default
+on; the API field is `wifi_beacon_enabled`), `wifi_nan` (same encoding, default
+**off** — the one opt-in transport; the API field is `wifi_nan_enabled`).
+Over-length DRI values are silently ignored by `dri_populate_identity()`.
+
+### Region is opaque to the firmware
+
+`dri_region` is one of `"US"`/`"EU"`/`"UK"`/`""`. Region has no default,
+because DRIFT cannot guess the jurisdiction and guessing wrong is a compliance
+problem rather than an inconvenience, so an unconfigured device claims nothing
+and reports `""`.
+
+`""` is also a **selectable choice** — the dash offers it as *"Other — no
+regional rules"*, which is the correct answer for every jurisdiction DRIFT does
+not model (Australia and Canada have no mandate in force at all) and the escape
+hatch if the EU/UK syntax check ever rejects a number it should not. Under it
+the operator ID is opaque: no format rules, not required, capped at
+`ODID_ID_SIZE`, and **not** split into number + verification code — there is no
+registry in play, so splitting would silently move the tail of a plain
+20-character ID into `op_secret`.
+
+The consequence is deliberate and worth knowing: because "Other" and
+never-configured are the same value, **the firmware cannot tell them apart**,
+and a factory-fresh device loads showing "Other" rather than prompting for a
+region. Note also that the dash's region rule is *not* antd's `required`, since
+that treats `""` as empty — only a genuinely unset value (a failed GET) is an
+error.
+
+Nothing in the firmware branches on the value. US, EU and UK differ in **no**
+wire element, schedule rate or transport requirement — 14 CFR §89.315 and
+Annex Part 6 of Regulation (EU) 2019/945 (and its retained UK equivalent) ask
+for the same data set, and none of the three names a PHY. Region only decides
+which
+config inputs are required and how they are validated, so all of that (required
+fields, labels, the EU/UK 16-character registration-number format and its
+optional Luhn mod-36 check) lives in the **dash**. Keeping it there avoids
+carrying a 31-entry ISO country table and a checksum implementation in both C++
+and JS, in a build already at ~82% of its app partition.
+
+The firmware's only region rule is the three-value allow-list in `config.cpp`,
+which exists so an unservable value cannot be persisted — not so anything can
+act on it. `config_dri_region()` is there to serve the value back to the dash.
+Consequence to keep in mind: the dash *is* a compliance-relevant component, and
+`POST /api/config` via `curl` bypasses every content rule.
+
+Concretely, exactly **one** config field is region-dependent: the operator
+registration number (`op_id`). §89.315 lists no such field for a US broadcast
+module, so the dash hides it and posts `""` for both halves under `US`; EU and
+UK both require it, with different labels (EASA's "operator registration
+number" vs the CAA's "Remote ID number") and different prefixes. Everything
+else — the serial (`ua_id`, required by all three), the Self-ID (`ua_desc`,
+required by none) and the three transport flags (no region mandates any
+transport) — is uniform. In particular there is no US "BT4 and BT5
+simultaneously" rule and no EU Wi-Fi Beacon requirement: §89.320(g) asks only
+for a non-proprietary broadcast specification on Part-15-compliant ISM-band
+RF, and the EU text names no transport at all.
+
+### The EU/UK registration number lives in dash/src/registration.js
+
+Pinned by `dash/src/__tests__/registration.test.js` against EASA's own worked
+example (`FIN87astrdge12k8-xyz`, from AMC1/GM1 to Article 14(6) of
+Implementing Regulation (EU) 2019/947, which is where the 16-character format
+and the Luhn mod-36 scheme are defined). Three things there are deliberate and
+easy to "fix" wrongly:
+
+- **The allow-list is 31 codes, not the EU 27.** The four EFTA states
+  (`ISL`, `LIE`, `NOR`, `CHE`) participate under Article 129 of Regulation
+  (EU) 2018/1139 and the same drone rules apply to them. Since the syntax
+  check *blocks* saving, omitting them would make DRIFT unconfigurable for a
+  Norwegian or Swiss operator. (EASA membership is confirmed; that each of
+  those registries issues alpha-3-prefixed numbers in this format is **not**
+  independently verified.)
+- **A missing verification code is neutral, never a failure.** The Luhn
+  mod-36 check needs the 3 secret digits, and national registries appear
+  largely not to issue them (Austria issues only the 16-character number), so
+  most compliant operators have none. The check has three states —
+  passed/failed/**skipped** — and skipped renders grey.
+- **The single input is split, not length-capped.** EASA's full registration
+  string is 20 characters, which is *exactly* `ODID_ID_SIZE` — so a pasted
+  full string used to fit a 20-char field perfectly and would have broadcast
+  the private key, which the CAA explicitly warns against. The dash sanitizes
+  (strips whitespace and dashes, covering both EASA's hyphenated and the
+  CAA's space-separated renderings), takes the leading 16 characters as
+  `op_id` and the remainder as `op_secret`, and rejoins them for display.
+  Only `op_id` ever reaches `OperatorID.OperatorId`.
+
+`op_secret` is stored and served back so the dash can rejoin it and re-run the
+checksum after a reload. Note what that means: it is returned in plaintext by
+an unauthenticated endpoint on a SoftAP that may be open — the same exposure
+`wifi.password` already has. It is never broadcast and the firmware never
+reads it for anything.
 
 ## CI
 
@@ -331,8 +428,12 @@ publishes `site/` to Pages. PRs touching only `site/**` skip the build workflow.
   also clears the MAVLink library's global per-channel parser state.
 - ODID fixtures end in `0x00` and buffers are pre-zeroed, so truncation is
   invisible — the payload tests use non-zero fill deliberately.
-- `test_config` contains characterization tests: a missing or null JSON field is
-  currently persisted as the literal string `"null"`.
+- `test_config`'s rejection tests all assert *both* halves of the
+  complete-document contract: that the save was refused, and that every other
+  field still holds its previous value. The second half is what pins the
+  validate-before-write ordering, so a rejection cannot leave storage
+  half-updated. The old characterization tests for the `"null"`-string
+  behaviour are gone, because the behaviour is.
 - `native` needs `-Wno-missing-template-arg-list-after-template-kw` on Apple
   clang 21+ for ArduinoFake's `fakeit.hpp`.
 - The `-diff` attribute on `src/dash.cpp`, `dash/package-lock.json` and the

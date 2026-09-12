@@ -29,8 +29,20 @@ static const ConfigStorage mem_storage = { mem_isKey, mem_getString, mem_putStri
 void setUp() {
     kv.clear();
     ArduinoFakeReset();
-    // config_save() logs to Serial on malformed JSON.
+    // config_save() logs to Serial on every rejection.
     When(OverloadedMethod(ArduinoFake(Serial), println, size_t(const char *))).AlwaysReturn(1);
+}
+
+// config_save() takes a *complete* configuration document (config.h), so the
+// two AP fields under test have to travel with the rest of the config. Built
+// by hand rather than from the shared fixture because what matters here is
+// the SSID/password pair, and spelling it out keeps the AP decision visible
+// at the call site.
+static String config_with_ap(const char *ssid, const char *password) {
+    return String("{\"wifi\":{\"ssid\":\"") + ssid + "\",\"password\":\"" + password + "\"},"
+           "\"dri\":{\"region\":\"US\",\"ua_id\":\"\",\"ua_desc\":\"\",\"op_id\":\"\","
+           "\"op_secret\":\"\","
+           "\"bt5_enabled\":true,\"wifi_beacon_enabled\":true,\"wifi_nan_enabled\":false}}";
 }
 
 void test_default_config_brings_the_ap_up_open() {
@@ -43,7 +55,7 @@ void test_default_config_brings_the_ap_up_open() {
 
 void test_password_config_brings_the_ap_up_wpa() {
     config_init(&mem_storage, "DRIFT_AB");
-    config_save(String("{\"wifi\":{\"ssid\":\"DroneAP\",\"password\":\"12345678\"}}"));
+    TEST_ASSERT_TRUE(config_save(config_with_ap("DroneAP", "12345678")));
     WifiApParams ap = wifi_ap_params();
     TEST_ASSERT_EQUAL_STRING("DroneAP", ap.ssid.c_str());
     TEST_ASSERT_EQUAL_STRING("12345678", ap.password.c_str());
@@ -54,7 +66,7 @@ void test_saved_empty_password_stays_open() {
     // The branch decision is the empty string, not a missing key: a config
     // saved with an explicit empty password must still bring the AP up open.
     config_init(&mem_storage, "DRIFT_AB");
-    config_save(String("{\"wifi\":{\"ssid\":\"DroneAP\",\"password\":\"\"}}"));
+    TEST_ASSERT_TRUE(config_save(config_with_ap("DroneAP", "")));
     WifiApParams ap = wifi_ap_params();
     TEST_ASSERT_EQUAL_STRING("", ap.password.c_str());
     TEST_ASSERT_FALSE(ap.secure);

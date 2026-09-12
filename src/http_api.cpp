@@ -14,7 +14,8 @@ void http_api_init(const uint8_t *dash, size_t dash_len) {
 
 HttpApiResponse http_api_get(const char *path) {
     if (strcmp(path, HTTP_API_ROOT) == 0)
-        return {true, 200, "text/html", dash_blob, dash_blob_len, String(), true, false};
+        return {true, 200, "text/html; charset=utf-8", dash_blob, dash_blob_len, String(),
+                true, false};
     if (strcmp(path, HTTP_API_CONFIG) == 0)
         return {true, 200, "application/json", NULL, 0, config_get(), false, false};
     if (strcmp(path, HTTP_API_DEBUG_INFO) == 0)
@@ -25,6 +26,11 @@ HttpApiResponse http_api_get(const char *path) {
 HttpApiResponse http_api_post_config(const char *body) {
     if (body == NULL)
         return {true, 400, NULL, NULL, 0, String(), false, false};
-    config_save(body);
+    // A rejected document must not reboot the device: the reboot exists to
+    // re-read the identity, and nothing changed. Previously any body that
+    // config_save() could not parse still answered 200 and restarted, which
+    // looked to a client exactly like a successful save.
+    if (!config_save(body))
+        return {true, 400, NULL, NULL, 0, String(), false, false};
     return {true, 200, NULL, NULL, 0, String(), false, true};
 }
