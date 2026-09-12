@@ -105,14 +105,17 @@ describe('ConnectionBox', () => {
     expect(b.querySelector('.status-box-detail')).toBeNull();
   });
 
-  test('collapsed sider renders a dot with a tooltip summary', () => {
+  test('collapsed sider renders an icon and dot with a tooltip summary', () => {
     const { container } = render(
       <ConnectionBox connection="connected" stale={false} msgAgeMs={3000} collapsed={true} />
     );
-    const dot = container.querySelector('.status-box-collapsed');
-    expect(dot).not.toBeNull();
-    expect(dot.className).toContain('status-dot-ok');
-    expect(dot.title).toBe('Connected · updated 3s ago');
+    const item = container.querySelector('.status-box-collapsed');
+    expect(item).not.toBeNull();
+    expect(item.title).toBe('Connected · updated 3s ago');
+    expect(item.querySelector('.status-dot-ok')).not.toBeNull();
+    // A plug, not a Wi-Fi glyph: this box is the /ws socket, not radio
+    // signal strength.
+    expect(item.querySelector('.anticon-api')).not.toBeNull();
     expect(container.querySelector('.status-box')).toBeNull();
   });
 });

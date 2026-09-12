@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Layout, Menu, message } from 'antd';
-import { BarChartOutlined, EditOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { EditOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import Status from './Status';
-import Statistics from './Statistics';
-import ConnectionBox from './ConnectionBox';
+import SidebarHealth from './SidebarHealth';
 import useStatusSocket from './useStatusSocket';
 import Config from './Config';
 import axios from 'axios';
@@ -19,11 +18,6 @@ const items = [
     icon: React.createElement(InfoCircleOutlined),
   },
   {
-    key: "statistics",
-    label: "Statistics",
-    icon: React.createElement(BarChartOutlined),
-  },
-  {
     key: "config",
     label: "Config",
     icon: React.createElement(EditOutlined),
@@ -34,8 +28,9 @@ const App = () => {
   const [selectedKey, setSelectedKey] = useState("status");
   const [buildInfo, setBuildInfo] = useState("LOADING");
   const [collapsed, setCollapsed] = useState(false);
-  // One /ws connection for the whole app: the sidebar connection box is
-  // visible from every tab, and the Status view shows its details.
+  // One /ws connection for the whole app: the sidebar health block is
+  // visible from every tab, and the Status view reads the transmit rates
+  // off the same message.
   const status = useStatusSocket();
 
   useEffect(() => {
@@ -61,9 +56,7 @@ const App = () => {
   const renderContent = () => {
     switch (selectedKey) {
       case "status":
-        return <Status telemetryState={status.telemetryState} gnssState={status.gnssState} />;
-      case "statistics":
-        return <Statistics txState={status.txState} />;
+        return <Status txState={status.txState} />;
       case "config":
         return <Config />;
       default:
@@ -86,13 +79,7 @@ const App = () => {
           }}>
           DRIFT
         </div>
-        <ConnectionBox
-          collapsed={collapsed}
-          connection={status.connection}
-          stale={status.stale}
-          msgAgeMs={status.msgAgeMs}
-          closedAgeMs={status.closedAgeMs}
-        />
+        <SidebarHealth collapsed={collapsed} status={status} />
         <Menu theme="dark"
               items={items}
               defaultSelectedKeys={ [ "status" ] }

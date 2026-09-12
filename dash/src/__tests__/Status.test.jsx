@@ -20,39 +20,53 @@ function fixture_read(rel) {
 
 const fixture = fixture_read('api/status.json');
 
-// Presentational: the view carries the telemetry/GNSS flags only — the
-// /ws connection lives in the sidebar ConnectionBox.
-function rows(container) {
-  const rows = container.querySelectorAll('.ant-row');
-  expect(rows).toHaveLength(2);
-  return rows;
+function cellTexts(container) {
+  return Array.from(container.querySelectorAll('.ant-table-cell'))
+    .map((cell) => cell.textContent);
 }
 
 describe('Status', () => {
-  test('renders unknown states before the first status message', () => {
-    const { container } = render(<Status telemetryState={null} gnssState={null} />);
-    const [telemetryRow, gnssRow] = rows(container);
-    expect(telemetryRow.querySelector('.anticon-question-circle')).not.toBeNull();
-    expect(gnssRow.querySelector('.anticon-question-circle')).not.toBeNull();
+  test('renders every transport with dashes before the first status message', () => {
+    const { container } = render(<Status txState={null} />);
+    expect(container.querySelector('.ant-table')).not.toBeNull();
+    expect(container.textContent).toContain('Transmit rates');
+    for (const label of ['Bluetooth 4 legacy', 'Bluetooth 5 Long Range', 'Wi-Fi Beacon', 'Wi-Fi NAN']) {
+      expect(container.textContent).toContain(label);
+    }
+    // Unknown values dash out instead of showing a misleading zero.
+    const texts = cellTexts(container);
+    expect(texts.filter((t) => t === '—')).toHaveLength(8);
   });
 
-  test('maps each flag to its own row (telemetry ok, gnss failed)', () => {
-    const { container } = render(
-      <Status telemetryState={fixture.telemetry} gnssState={fixture.gnss} />
-    );
-    const [telemetryRow, gnssRow] = rows(container);
-    expect(telemetryRow.textContent).toContain('Telemetry');
-    expect(gnssRow.textContent).toContain('GNSS');
-    expect(telemetryRow.querySelector('.anticon-check-circle')).not.toBeNull();
-    expect(telemetryRow.querySelector('.anticon-close-circle')).toBeNull();
-    expect(gnssRow.querySelector('.anticon-close-circle')).not.toBeNull();
-    expect(gnssRow.querySelector('.anticon-check-circle')).toBeNull();
+  test('renders per-transport transmit rates from the status message', () => {
+    const { container } = render(<Status txState={fixture.tx} />);
+    expect(container.querySelector('.ant-table')).not.toBeNull();
+    for (const label of ['Bluetooth 4 legacy', 'Bluetooth 5 Long Range', 'Wi-Fi Beacon', 'Wi-Fi NAN']) {
+      expect(container.textContent).toContain(label);
+    }
+    // Fixture values render verbatim: the bench steady state (all ten BT4
+    // slots, N=3 packs, five IE refreshes, two NAN action frames).
+    const texts = cellTexts(container);
+    expect(texts).toContain('10');
+    expect(texts).toContain('15');
+    expect(texts).toContain('6');
   });
 
-  test('has no connection row — that lives in the sidebar box', () => {
-    const { container } = render(
-      <Status telemetryState={fixture.telemetry} gnssState={fixture.gnss} />
-    );
-    expect(container.textContent).not.toContain('Connection');
+  test('dashes out transports the payload does not carry', () => {
+    const { container } = render(<Status txState={{ bt4: { frames: 1, messages: 1 } }} />);
+    expect(container.textContent).toContain('Bluetooth 4 legacy');
+    const texts = cellTexts(container);
+    expect(texts).toContain('1');
+    expect(texts.filter((t) => t === '—')).toHaveLength(6);
+  });
+
+  test('carries no health indicators — those live in the sidebar', () => {
+    // Device and link health moved to SidebarHealth so they stay visible
+    // from every tab; this view is what the device puts on air.
+    const { container } = render(<Status txState={fixture.tx} />);
+    expect(container.querySelector('.status-box')).toBeNull();
+    expect(container.textContent).not.toContain('Telemetry');
+    expect(container.textContent).not.toContain('GNSS');
+    expect(container.textContent).not.toContain('Connected');
   });
 });

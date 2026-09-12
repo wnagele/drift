@@ -22,8 +22,8 @@ function fixture_read(rel) {
 
 const configFixture = fixture_read('api/config.json');
 
-// App owns one /ws connection via useStatusSocket (sidebar connection box +
-// Status view), regardless of the selected tab.
+// App owns one /ws connection via useStatusSocket (sidebar health block +
+// the Status view's transmit rates), regardless of the selected tab.
 class MockWebSocket {
   static instances = [];
   constructor(url) {
@@ -110,25 +110,29 @@ describe('App build info precedence', () => {
     expect(debugRequests).toBe(1);
   });
 
-  test('shows the connection box in the sidebar and one shared websocket', async () => {
+  test('shows the health block in the sidebar and one shared websocket', async () => {
     const { container } = render(<App />);
     await screen.findByText('Build Info: UNKNOWN', {}, { timeout: 2000 });
 
-    // The connection box lives in the sider, visible from every tab…
-    expect(container.querySelector('.status-box')).not.toBeNull();
-    // …and all three tabs exist, with exactly one websocket for the whole app.
+    // Connection plus both device flags live in the sider, so they stay
+    // visible from every tab rather than only on the view they describe.
+    expect(container.querySelectorAll('.status-box')).toHaveLength(3);
+
+    // Both tabs exist, with exactly one websocket for the whole app.
     expect(screen.queryByRole('menuitem', { name: /status/i })).not.toBeNull();
-    expect(screen.queryByRole('menuitem', { name: /statistics/i })).not.toBeNull();
     expect(screen.queryByRole('menuitem', { name: /config/i })).not.toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /statistics/i })).toBeNull();
     expect(MockWebSocket.instances).toHaveLength(1);
     expect(MockWebSocket.instances[0].url).toBe('ws://' + window.location.host + '/ws');
 
-    act(() => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /statistics/i }));
-    });
-    expect(MockWebSocket.instances).toHaveLength(1);
+    // Switching tabs neither reconnects nor drops the health block.
     act(() => {
       fireEvent.click(screen.getByRole('menuitem', { name: /config/i }));
+    });
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(container.querySelectorAll('.status-box')).toHaveLength(3);
+    act(() => {
+      fireEvent.click(screen.getByRole('menuitem', { name: /status/i }));
     });
     expect(MockWebSocket.instances).toHaveLength(1);
   });

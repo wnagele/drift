@@ -1,12 +1,18 @@
 import React from 'react';
+import { ApiOutlined } from '@ant-design/icons';
+import StatusBox from './StatusBox';
 
 // Connection indicator in the left navigation — the single home for /ws
 // connection health. The box color and state word flip between green
 // (Connected), orange (Connecting / No data) and red (Disconnected), with a
 // detail line for the most recent update age (or how long ago the
-// connection was lost). Connection only; telemetry/GNSS live in the Status
-// view. Collapses to a colored dot with a native tooltip when the sider
-// folds.
+// connection was lost). Connection only: whether the dash can hear the
+// device at all, which is a different question from what the device is
+// reporting once heard (the telemetry/GNSS flags beside it).
+//
+// The collapsed-sider icon is a plug rather than a Wi-Fi glyph on purpose:
+// this box measures the /ws socket, and a Wi-Fi symbol would invite reading
+// it as radio signal strength, which it is not.
 const ConnectionBox = ({ connection, stale, msgAgeMs, closedAgeMs, collapsed = false }) => {
   const state = () => {
     if (connection === 'closed')
@@ -46,22 +52,14 @@ const ConnectionBox = ({ connection, stale, msgAgeMs, closedAgeMs, collapsed = f
     return 'updated ' + secs(msgAgeMs) + 's ago';
   };
 
-  const s = state();
-  const t = title();
-  const d = detail();
-  const tooltip = d ? t + ' · ' + d : t;
-
-  if (collapsed)
-    return <div className={'status-box-collapsed status-dot-' + s} title={tooltip} />;
-
   return (
-    <div className={'status-box status-box-' + s}>
-      <div className="status-box-line status-connection">
-        <span className={'status-dot status-dot-' + s} />
-        {t}
-      </div>
-      {d && <div className="status-box-detail">{d}</div>}
-    </div>
+    <StatusBox
+      collapsed={collapsed}
+      icon={<ApiOutlined />}
+      state={state()}
+      label={title()}
+      detail={detail()}
+    />
   );
 };
 
