@@ -19,6 +19,7 @@ function fixture_read(rel) {
 }
 
 const fixture = fixture_read('api/status.json');
+const broadcast = fixture_read('api/broadcast.json');
 
 // Records every constructed WebSocket so tests can drive messages into it.
 class MockWebSocket {
@@ -80,6 +81,41 @@ describe('useStatusSocket', () => {
       ws.onmessage({ data: JSON.stringify(fixture) });
     });
     expect(result.current.txState).toEqual(fixture.tx);
+  });
+
+  test('exposes the broadcast payload as its own message type', () => {
+    const { result } = renderHook(() => useStatusSocket());
+    const ws = MockWebSocket.instances[0];
+    expect(result.current.broadcastState).toBeNull();
+    expect(result.current.broadcastAgeMs).toBeNull();
+    act(() => {
+      ws.onopen();
+      ws.onmessage({ data: JSON.stringify(broadcast) });
+    });
+    expect(result.current.broadcastState).toEqual(broadcast);
+    expect(result.current.broadcastAgeMs).toBeGreaterThanOrEqual(0);
+    // Older firmware sends only the status message, which must not disturb
+    // the panel's state.
+    act(() => {
+      ws.onmessage({ data: JSON.stringify(fixture) });
+    });
+    expect(result.current.broadcastState).toEqual(broadcast);
+  });
+
+  test('a broadcast message does not count as liveness', () => {
+    // Liveness is tied to the status message alone: if any message counted,
+    // a healthy-looking inspector stream would mask a wedged status path -
+    // exactly the failure the staleness check exists to catch.
+    const { result } = renderHook(() => useStatusSocket());
+    const ws = MockWebSocket.instances[0];
+    act(() => {
+      ws.onopen();
+      ws.onmessage({ data: JSON.stringify(broadcast) });
+    });
+    expect(result.current.broadcastState).toEqual(broadcast);
+    expect(result.current.stale).toBe(true);
+    expect(result.current.msgAgeMs).toBeNull();
+    expect(result.current.telemetryState).toBeNull();
   });
 
   test('ignores junk and non-status messages, then still updates', () => {

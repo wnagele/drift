@@ -2,6 +2,7 @@
 #include <TaskScheduler.h>
 #include "betaflight_mavlink.h"
 #include "ble.h"
+#include "broadcast.h"
 #include "config.h"
 #include "dri.h"
 #include "net.h"
@@ -26,6 +27,11 @@ Task taskProcessStatus(3*TASK_SECOND, TASK_FOREVER, &processStatus, &scheduler, 
 
 void sendStatus() {
     net_broadcast(status_get());
+    // Two messages on the one socket, distinguished by their "type": device
+    // health and transmit rates, then the broadcast inspector payload. The
+    // dash keeps its liveness detection tied to the status message alone, so
+    // a healthy inspector stream cannot mask a wedged status path.
+    net_broadcast(broadcast_get(&odid_state));
 }
 Task taskSendStatus(1*TASK_SECOND, TASK_FOREVER, &sendStatus, &scheduler, true);
 

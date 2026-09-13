@@ -72,7 +72,16 @@ frames the broadcast schedule handed to the radio seams over the last completed 
 and the ODID messages they carried — a NAN window's sync beacon holds no ODID data and is
 not counted, so frames:messages is 1:N on every transport; counted in `dri.cpp` at the
 send seams, enable-gated by the config flags wired through `txcount_init()`, sampled by
-`txcount_sample(millis())` from the main loop). The dash derives its own
+`txcount_sample(millis())` from the main loop). The same 1 s task then pushes a
+second message, `{"type":"broadcast"}` from `broadcast.cpp` — the broadcast
+inspector payload, i.e. every field of the one `ODID_UAS_Data` the transports
+are composed from, with each enum already a display-ready string and each
+measurement either a number or `null` where DRIFT is broadcasting ODID's
+in-band "no value", so the dash holds no ordinal table and no sentinel table.
+A message whose `*Valid` flag is clear contributes no keys at all, which gives
+the dash two distinct negative states: key absent = not broadcast, key present
+and `null` = broadcast as "no value". The strings are therefore API, pinned by
+`test/fixtures/api/broadcast.json`. The dash derives its own
 health from that cadence: App owns one `/ws` connection
 (`useStatusSocket`) and passes it to two consumers. The **sidebar** carries
 the whole health block (`SidebarHealth`): a connection box (green Connected /
@@ -85,8 +94,23 @@ collapses to one identity icon plus a state dot each, with the text in a
 native tooltip — the icon is what keeps the collapsed block legible, since
 three bare dots carry colour but no identity. An open-but-silent socket (no status message for 5 s) is
 flagged "No data" so a wedged link shows up instead of freezing the flags.
-The **Status view** is what the device puts on air — today the per-transport
-transmit-rate table, and the home for the broadcast values next. There are two
+Only a `status` message refreshes that liveness — a `broadcast` message
+deliberately does not, so a healthy inspector stream cannot mask a wedged
+status path.
+The **Status view** is what the device puts on air: the per-transport
+transmit-rate table, then the broadcast-content table (`Status.js`'s own
+descriptor list, so the view never depends on JSON key order). That table is
+a list of what goes out and nothing else — it names no ODID message (which
+message carries a field is not the operator's concern), a field the payload
+omits gets no row at all, and an enum that qualifies something is rendered
+after the value it qualifies (`(Type: Serial Number)`, `(Type: Above
+Take-off)`) rather than taking a row of its own. Three payload fields that
+are read as a unit share one row each with their parts named inside the
+value — the aircraft's `Location`, the `Operator location` and the
+`Accuracy` trio — and the altitudes carry no datum in their label, because
+F3411 declares them WGS-84 ellipsoidal while the flight controller supplies
+MSL. Only an explicit `null` gets a row, reading "unknown". There are
+two
 menu entries only, Status and Config; the old three-view split (flags on
 Status, rates on Statistics) is gone.
 
@@ -99,8 +123,8 @@ frame seam), `config`/`config_storage`/
 `config_storage_esp` (JSON ⇄ NVS), `http_api` (transport-free routing table),
 `net` (Wi-Fi, async HTTP, WebSocket, OTA), `wifi_ap` (open-vs-WPA decision),
 `status`, `txcount` (per-transport transmit-rate counters for the dash),
-`debug` (build provenance), `utils` (default SSID + Wi-Fi NAN source
-MAC from eFuse MAC).
+`broadcast` (the ODID state as dash-ready JSON), `debug` (build provenance),
+`utils` (default SSID + Wi-Fi NAN source MAC from eFuse MAC).
 
 Testability seams — keep these intact when refactoring:
 
@@ -112,6 +136,8 @@ Testability seams — keep these intact when refactoring:
   `dri_wifi_beacon_due(last, now)`, `dri_wifi_nan_due(last, now)`.
 - `http_api_init(dash, dash_len)` injects the dash blob, because the native
   build does not link the generated `dash.cpp`.
+- `broadcast_get(const ODID_UAS_Data *)` takes the UAS data as a parameter
+  because `odid_state` lives in `main.cpp`, which the native env excludes.
 - Value structs instead of I/O: `HttpApiResponse`, `WifiApParams`, `BleAdvFrame`.
 - The Wi-Fi NAN source MAC is injected: `wifi_nan_init(enabled, mac)` (main.cpp
   passes the eFuse base MAC from `utils::getBaseMac`, readable before the
@@ -170,8 +196,9 @@ while advertising).
 - Dash E2E: `cd dash && npm run test:e2e` (needs `npx playwright install chromium`)
 - Dash bundle: `cd dash && ./build.sh` (npm install + webpack + wrap)
 - Dash local preview: `cd dash && npm run dev` — mock device on
-  `http://127.0.0.1:8321` (shared fixtures for the API, 1 Hz `/ws` status
-  stream). `WS_MODE` picks the connection-box scenario: `connected`
+  `http://127.0.0.1:8321` (shared fixtures for the API, 1 Hz `/ws` stream of
+  both messages, status then broadcast, like the firmware's one task).
+  `WS_MODE` picks the connection-box scenario: `connected`
   (default), `no-data` (socket opens, nothing arrives), `disconnected`
   (dropped right away), `flaky` (random delays that sometimes breach the
   5 s staleness threshold, flipping the box between Connected and No data)
@@ -198,9 +225,10 @@ Marked `linguist-generated` in `.gitattributes`; regenerate and commit the outpu
 ### Host unit tests (`pio test -e native`)
 
 Unity with a hand-written `main()` per file; ArduinoFake where Arduino APIs are
-touched. Each `test/test_*/` dir is a separate target: `config`, `debug`, `dri`
-(largest — byte-exact ODID encodings, schedule, timing guard, `millis()`
-wraparound), `http_api`, `mavlink`, `status`, `utils`, `wifi_ap`.
+touched. Each `test/test_*/` dir is a separate target: `broadcast`, `config`,
+`debug`, `dri` (largest — byte-exact ODID encodings, schedule, timing guard,
+`millis()` wraparound), `http_api`, `mavlink`, `status`, `txcount`, `utils`,
+`wifi_ap`.
 `test/support/fixtures.h` provides `fixture_read()`, which tries several
 candidate paths so the tests tolerate the runner's working directory.
 
@@ -240,8 +268,8 @@ visual checks (`WS_MODE` picks the connection-box scenario: `connected`,
 
 ### The shared contract
 
-`test/fixtures/api/{config,status,debug-info}.json` is the single source of truth
-for the HTTP/WS payload shapes, asserted by the firmware unit tests, the e2e NVS
+`test/fixtures/api/{config,status,broadcast,debug-info}.json` is the single
+source of truth for the HTTP/WS payload shapes, asserted by the firmware unit tests, the e2e NVS
 seed, and the dash unit + E2E tests. `status.json` is asymmetric
 (`telemetry: true, gnss: false`) on purpose so a telemetry/gnss swap cannot
 cancel out. ODID encodings come from the vendored C library and MAVLink captures
@@ -256,7 +284,7 @@ ODID (no maintained implementation exists).
 | `GET /api/config` | `{wifi:{ssid,password},dri:{region,ua_id,ua_desc,op_id,op_secret,bt5_enabled,wifi_beacon_enabled,wifi_nan_enabled}}` |
 | `POST /api/config` | 200 + reboot (identity is read once at boot); 400 on a bodiless POST, malformed JSON, a missing or wrong-typed field, or an unknown region |
 | `GET /debug/info` | `{version,git_ref,build_time}` (nulls in dev builds) |
-| `WS /ws` | `{type:"status",telemetry,gnss,tx:{bt4,bt5,wifi_beacon,wifi_nan}}` once per second; each `tx` transport is `{frames,messages}` per second over the last completed window |
+| `WS /ws` | Two messages once per second, from the one 1 s task. `{type:"status",telemetry,gnss,tx:{bt4,bt5,wifi_beacon,wifi_nan}}` — each `tx` transport is `{frames,messages}` per second over the last completed window — then `{type:"broadcast",...}`, the flat broadcast inspector payload (`broadcast.cpp`; enums as display strings, measurements as numbers or `null`, an invalid message's keys omitted). Pinned by `test/fixtures/api/broadcast.json`. |
 
 `POST /api/config` takes a **complete** configuration document: every field in
 the `GET` shape must be present and correctly typed (strings for the strings —
@@ -404,7 +432,10 @@ publishes `site/` to Pages. PRs touching only `site/**` skip the build workflow.
   and in their own TU.** The gdb harness reads `$a0`/`$a1` (`$a2` for the pack
   length) at function entry to capture broadcasts. Same for
   `wifi_beacon_send_pack()`'s and the `wifi_nan_send_*()`s' `DRIFT_NO_NET`
-  bodies.
+  bodies — and for `net_broadcast()`'s, whose `$a0` is how
+  `scenarios/status.py` reads the pushed `/ws` payload back
+  (`read_arduino_string_ref`) to tell the status and broadcast messages
+  apart.
 - **The vendor IE refresh must stay a clear-then-set.** `esp_wifi_set_vendor_ie`
   rejects enabling an IE at an index that is already enabled
   (`ESP_ERR_INVALID_ARG`), so every ~5 Hz refresh clears the BEACON and

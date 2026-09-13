@@ -40,6 +40,7 @@ SCENARIO_MODULES = [
     "scenarios.status",
     "scenarios.operator",
     "scenarios.broadcast",
+    "scenarios.inspector",
     "scenarios.unknown",
     "scenarios.accuracy",
     "scenarios.serial",

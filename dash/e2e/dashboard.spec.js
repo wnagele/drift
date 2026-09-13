@@ -19,6 +19,7 @@ function fixture_read(rel) {
 
 const configFixture = fixture_read('api/config.json');
 const statusFixture = fixture_read('api/status.json');
+const broadcastFixture = fixture_read('api/broadcast.json');
 const debugInfoFixture = fixture_read('api/debug-info.json');
 
 test.beforeEach(async ({ page }) => {
@@ -32,8 +33,12 @@ test.beforeEach(async ({ page }) => {
 
 test('sidebar health block and status view reflect websocket status messages', async ({ page }) => {
   await page.routeWebSocket('**/ws', (ws) => {
-    // Push the recorded device status once the app connects.
-    setTimeout(() => ws.send(JSON.stringify(statusFixture)), 100);
+    // Push the recorded device messages once the app connects — both of
+    // them, like the firmware's one 1 Hz task does.
+    setTimeout(() => {
+      ws.send(JSON.stringify(statusFixture));
+      ws.send(JSON.stringify(broadcastFixture));
+    }, 100);
   });
 
   await page.goto('/');
@@ -62,12 +67,31 @@ test('sidebar health block and status view reflect websocket status messages', a
 
   // The Status tab (the default) carries the per-transport transmit-rate
   // table, fed by the same websocket stream (txcount.cpp diagnostics).
-  const rates = page.locator('.ant-table');
+  const rates = page.locator('.ant-table').first();
   await expect(rates).toContainText('Bluetooth 4 legacy');
   await expect(rates).toContainText('Bluetooth 5 Long Range');
   await expect(rates).toContainText('Wi-Fi Beacon');
   await expect(rates).toContainText('Wi-Fi NAN');
   await expect(rates).toContainText('10');
+
+  // …and below it the broadcast inspector, fed by the second message type on
+  // the same socket. The enum values arrive as words because the firmware
+  // interprets them, so the dash holds no ordinal table.
+  const content = page.locator('.ant-table').nth(1);
+  await expect(content).toContainText(broadcastFixture.uas_id + ' (Type: Serial Number)');
+  await expect(content).toContainText('Airborne');
+  await expect(content).toContainText('Latitude 47.3566123°, Longitude 8.5321456°, Altitude 500.5 m');
+  await expect(content).toContainText('Horizontal Unknown, Vertical Unknown, Speed Unknown');
+  await expect(content).toContainText('30.5 m (Type: Above Take-off)');
+  await expect(content).toContainText('3.5 m/s');
+  await expect(content).toContainText(broadcastFixture.operator_id);
+  // The fixture configures no Self-ID, so that message is not on air and the
+  // table - a list of what goes out - does not mention it. Nor does it carry
+  // the ODID message names: which message a field rides in is the firmware's
+  // business.
+  await expect(content).not.toContainText('Description');
+  await expect(content).not.toContainText('Basic ID');
+  await expect(content).not.toContainText('Self-ID');
 
   // The health block survives a tab switch, which is the whole point of it
   // living in the sider.

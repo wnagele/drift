@@ -1,3 +1,5 @@
+import json
+
 from expectations import INV_ALT, INV_DIR, odid_fixture
 from harness import scenario
 from scenarios.broadcast import CYCLE_LENGTH, cycle_of, full_cycle
@@ -44,3 +46,16 @@ def unknown_telemetry(t):
     t.check_eq("every location slot matches the unknown-sentinels reference encoding",
                [cycle[i][1] for i in (1, 3, 5, 7)],
                [odid_fixture("location_unknown")] * 4)
+
+    # ... and the dash's inspector payload translates those sentinels into
+    # JSON null, so the panel can say "unknown" where a receiver app shows
+    # only a blank. This is the one narrative state that produces them: the
+    # speeds stay real, so a translation that nulled everything would fail.
+    payload = json.loads(t.read_arduino_string("broadcast_get(&odid_state)"))
+    t.check_eq("the unknown course and altitudes are null in the dash payload",
+               [payload["direction"], payload["altitude_geo"], payload["height"]],
+               [None, None, None])
+    t.check_eq("the known speeds and position are still numbers",
+               [payload["speed_horizontal"], payload["speed_vertical"],
+                payload["latitude"]],
+               [3.5, 2.5, 47.3566123])

@@ -56,7 +56,9 @@ const App = () => {
   const renderContent = () => {
     switch (selectedKey) {
       case "status":
-        return <Status txState={status.txState} />;
+        return <Status txState={status.txState}
+                       broadcastState={status.broadcastState}
+                       broadcastAgeMs={status.broadcastAgeMs} />;
       case "config":
         return <Config />;
       default:
