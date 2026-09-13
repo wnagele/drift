@@ -8,8 +8,9 @@
 //  2. Local visual check: `npm run dev`, then open http://127.0.0.1:8321 —
 //     the dashboard runs against the shared fixtures exactly like it would
 //     against a device: config from api/config.json, footer build info from
-//     api/debug-info.json, and a /ws stream pushing api/status.json once a
-//     second like the firmware's taskSendStatus.
+//     api/debug-info.json, and a /ws stream pushing api/status.json plus
+//     api/broadcast.json once a second like the firmware's taskSendStatus
+//     (which sends both, hence two messages per tick here).
 //  3. WS_MODE env knob to eyeball the connection-box scenarios, named for
 //     the state they produce:
 //       connected (default) — healthy 1 Hz stream
@@ -95,6 +96,15 @@ wss.on('connection', (ws) => {
     const timers = [];
     let flakyTimer = null;
 
+    // One tick of the firmware's 1 Hz taskSendStatus: the status message and
+    // the broadcast inspector payload, in that order, on the one socket.
+    const push = () => {
+        if (ws.readyState !== ws.OPEN)
+            return;
+        ws.send(fixture('status.json'));
+        ws.send(fixture('broadcast.json'));
+    };
+
     const clearAll = () => {
         for (const t of timers)
             clearInterval(t);
@@ -117,18 +127,14 @@ wss.on('connection', (ws) => {
                 ? 5000 + Math.random() * 4000   // breach: 5–9 s silence
                 : 700 + Math.random() * 600;    // normal: 0.7–1.3 s
             flakyTimer = setTimeout(() => {
-                if (ws.readyState === ws.OPEN)
-                    ws.send(fixture('status.json'));
+                push();
                 sendNext();
             }, delay);
         };
         sendNext();
     } else {
         // connected: the firmware's cadence — one push per second.
-        timers.push(setInterval(() => {
-            if (ws.readyState === ws.OPEN)
-                ws.send(fixture('status.json'));
-        }, 1000));
+        timers.push(setInterval(push, 1000));
     }
 
     ws.on('close', clearAll);

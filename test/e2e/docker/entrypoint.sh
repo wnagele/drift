@@ -121,7 +121,7 @@ run_suite() {
 
 # The narrative suite shares one boot and accumulates state; the defaults
 # suite (defaults + serial audit) boots its own image, twice.
-MAIN_SCENARIOS="scenarios.boot,scenarios.telemetry,scenarios.branches,scenarios.status,scenarios.operator,scenarios.broadcast,scenarios.unknown,scenarios.accuracy,scenarios.serial"
+MAIN_SCENARIOS="scenarios.boot,scenarios.telemetry,scenarios.branches,scenarios.status,scenarios.operator,scenarios.broadcast,scenarios.inspector,scenarios.unknown,scenarios.accuracy,scenarios.serial"
 DEFAULTS_SCENARIOS="scenarios.defaults,scenarios.serial"
 
 FAILED=0

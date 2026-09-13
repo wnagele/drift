@@ -58,10 +58,15 @@ class Session:
         pointer, packed behind a flag bit). The contents must be extracted
         before the next inferior call: the dummy frame holding the return
         object is reused then."""
-        value = gdb.parse_and_eval(expression)
-        if int(value["sso"]["isSSO"]):
-            return value["sso"]["buff"].string()
-        return value["ptr"]["buff"].string()
+        return _arduino_string(gdb.parse_and_eval(expression))
+
+    def read_arduino_string_ref(self, expression):
+        """Contents of an Arduino String the target *points at*, e.g. the
+        argument register holding a `const String &` at a call site
+        (net_broadcast's DRIFT_NO_NET body is empty and in its own
+        translation unit, so $a0 still holds the reference at entry - the
+        same property the ble_send captures rely on)."""
+        return _arduino_string(gdb.parse_and_eval("*(String *)(%s)" % expression))
 
     def call(self, function):
         """Invoke a void function on the target."""
@@ -233,6 +238,13 @@ class Session:
                 time.sleep(0.2)
         raise RuntimeError("could not connect to the emulated UART on %s:%d"
                            % self.serial_addr)
+
+
+def _arduino_string(value):
+    """Contents of an Arduino String object (WString.h's SSO union)."""
+    if int(value["sso"]["isSSO"]):
+        return value["sso"]["buff"].string()
+    return value["ptr"]["buff"].string()
 
 
 class _Collector(gdb.Breakpoint):

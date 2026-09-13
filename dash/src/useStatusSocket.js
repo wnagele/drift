@@ -24,13 +24,19 @@ const TICK_MS = 1000;
 //                   message ({bt4,bt5,wifi_beacon,wifi_nan}, each
 //                   {frames,messages}), or null if absent (no message yet,
 //                   or older firmware without the tx diagnostics)
+//   broadcastState  the last broadcast message (what the device is putting
+//                   on air, one flat object of ODID fields), or null if
+//                   none has arrived yet
+//   broadcastAgeMs  ms since the last broadcast message, or null if none yet
 const useStatusSocket = () => {
   const [telemetryState, setTelemetryState] = useState(null);
   const [gnssState, setGnssState] = useState(null);
   const [txState, setTxState] = useState(null);
+  const [broadcastState, setBroadcastState] = useState(null);
   const [connection, setConnection] = useState('connecting');
   const [now, setNow] = useState(Date.now());
   const lastMessageAt = useRef(null);
+  const lastBroadcastAt = useRef(null);
   const closedAt = useRef(null);
 
   useEffect(() => {
@@ -69,6 +75,15 @@ const useStatusSocket = () => {
           setTelemetryState(data.telemetry);
           setGnssState(data.gnss);
           setTxState(data.tx ?? null);
+        } else if (data.type === 'broadcast') {
+          // Deliberately does not touch lastMessageAt: liveness stays tied
+          // to the status message alone, so a healthy-looking inspector
+          // stream cannot mask a wedged status path — the precise failure
+          // STALE_AFTER_MS exists to catch. Both come from the same 1 Hz
+          // firmware task, so it makes no practical difference today; it is
+          // the coupling that is worth refusing.
+          lastBroadcastAt.current = Date.now();
+          setBroadcastState(data);
         }
       } catch (err) {
         console.error('Invalid message: ', event.data);
@@ -103,8 +118,15 @@ const useStatusSocket = () => {
   const closedAgeMs = connection === 'closed' && closedAt.current !== null
     ? Math.max(0, now - closedAt.current)
     : null;
+  // The inspector panel's own freshness, from the receive time rather than
+  // from a payload field: ODID's Location.TimeStamp is seconds-after-the-hour
+  // and would answer a different question anyway.
+  const broadcastAgeMs = lastBroadcastAt.current === null
+    ? null
+    : Math.max(0, now - lastBroadcastAt.current);
 
-  return { connection, stale, msgAgeMs, closedAgeMs, telemetryState, gnssState, txState };
+  return { connection, stale, msgAgeMs, closedAgeMs, telemetryState, gnssState,
+           txState, broadcastState, broadcastAgeMs };
 };
 
 export default useStatusSocket;
