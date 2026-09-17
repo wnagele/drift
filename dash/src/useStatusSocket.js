@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { message } from 'antd';
+import ReconnectingSocket from './reconnecting_socket.js';
 
 // The firmware pushes a status message once per second (taskSendStatus in
 // main.cpp). An open socket that stays silent longer than this is wedged or
@@ -11,10 +11,16 @@ const TICK_MS = 1000;
 
 // Owns the /ws connection and derives its health. Called once in App so the
 // sidebar connection box and the Status view share a single socket that
-// stays connected across tab switches.
+// stays connected across tab switches. The socket itself is a
+// ReconnectingSocket — the when-to-connect policy lives in that module —
+// so while the link is down the box keeps showing Disconnected with the age
+// since it was first lost, and 'connecting' stays what a fresh page load
+// is.
 //
 // Returns:
-//   connection      'connecting' | 'connected' | 'closed'
+//   connection      'connecting' | 'connected' | 'closed' (closed covers
+//                   the whole retry loop: red with the age since the loss
+//                   beats an orange flicker per attempt)
 //   stale           no status message yet, or none within STALE_AFTER_MS
 //   msgAgeMs        ms since the last status message, or null if none yet
 //   closedAgeMs     ms since the connection was lost, or null unless closed
@@ -40,34 +46,27 @@ const useStatusSocket = () => {
   const closedAt = useRef(null);
 
   useEffect(() => {
-    const url = 'ws://' + window.location.host + '/ws';
-    const websocket = new WebSocket(url);
-    var shuttingDown = false;
+    const socket = new ReconnectingSocket('ws://' + window.location.host + '/ws');
 
-    websocket.onopen = () => {
-      if (!shuttingDown)
-        setConnection('connected');
+    socket.onopen = () => {
+      closedAt.current = null;
+      setConnection('connected');
     };
 
-    websocket.onclose = () => {
-      if (!shuttingDown) {
+    socket.onclose = () => {
+      // The first loss is the informative one: keep counting the outage
+      // age from it across the retries instead of restarting per attempt.
+      if (closedAt.current === null)
         closedAt.current = Date.now();
-        setNow(Date.now());
-        setConnection('closed');
-      }
-    };
-
-    websocket.onerror = (err) => {
-      if (shuttingDown)
-        return;
-      console.error('WebSocket error: ', err);
-      closedAt.current = Date.now();
       setNow(Date.now());
       setConnection('closed');
-      message.error('Connection error occured');
     };
 
-    websocket.onmessage = (event) => {
+    socket.onerror = (err) => {
+      console.error('WebSocket error: ', err);
+    };
+
+    socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'status') {
@@ -90,10 +89,9 @@ const useStatusSocket = () => {
       }
     };
 
-    return () => {
-      shuttingDown = true;
-      websocket.close()
-    };
+    // The socket's close() is a permanent shutdown: no retries, and no
+    // event can arrive after it, so the effect needs no flag of its own.
+    return () => socket.close();
   }, []);
 
   // Liveness tick: re-render once a second so consumers can report how long
