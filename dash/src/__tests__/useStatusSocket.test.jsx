@@ -3,6 +3,7 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 
 import useStatusSocket from '../useStatusSocket.js';
+import { RETRY_BASE_MS } from '../reconnecting_socket.js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -22,6 +23,8 @@ const fixture = fixture_read('api/status.json');
 const broadcast = fixture_read('api/broadcast.json');
 
 // Records every constructed WebSocket so tests can drive messages into it.
+// The retry machinery itself is pinned in reconnecting_socket.test.js;
+// these tests drive the raw socket the class constructs.
 class MockWebSocket {
   static instances = [];
   constructor(url) {
@@ -201,6 +204,9 @@ describe('useStatusSocket', () => {
       act(() => {
         vi.advanceTimersByTime(5000);
       });
+      // A retry fires within 5 s but its attempt never opens, so the box
+      // stays Disconnected and the age keeps counting from the one loss.
+      expect(MockWebSocket.instances.length).toBe(2);
       expect(result.current.connection).toBe('closed');
       expect(Math.floor(result.current.closedAgeMs / 1000)).toBeGreaterThanOrEqual(5);
     } finally {
@@ -212,9 +218,48 @@ describe('useStatusSocket', () => {
     const { result } = renderHook(() => useStatusSocket());
     const ws = MockWebSocket.instances[0];
     expect(typeof ws.onerror).toBe('function');
+    // Browsers always follow onerror with onclose; the hook relies on that
+    // instead of duplicating the state change on both events.
     expect(() => act(() => ws.onerror(new Error('boom')))).not.toThrow();
+    act(() => {
+      ws.onclose();
+    });
     expect(result.current.connection).toBe('closed');
     expect(result.current.closedAgeMs).not.toBeNull();
+  });
+
+  test('reconnects after a loss and clears the outage once open', () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useStatusSocket());
+      act(() => {
+        MockWebSocket.instances[0].onopen();
+        MockWebSocket.instances[0].onmessage({ data: JSON.stringify(fixture) });
+      });
+      expect(result.current.connection).toBe('connected');
+
+      act(() => {
+        MockWebSocket.instances[0].onclose();
+      });
+      expect(result.current.connection).toBe('closed');
+
+      // First retry after the base delay: still Disconnected while the
+      // attempt is in flight, green again once it opens and delivers.
+      act(() => {
+        vi.advanceTimersByTime(RETRY_BASE_MS);
+      });
+      expect(MockWebSocket.instances.length).toBe(2);
+      expect(result.current.connection).toBe('closed');
+      act(() => {
+        MockWebSocket.instances[1].onopen();
+        MockWebSocket.instances[1].onmessage({ data: JSON.stringify(fixture) });
+      });
+      expect(result.current.connection).toBe('connected');
+      expect(result.current.closedAgeMs).toBeNull();
+      expect(result.current.stale).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('closes the websocket on unmount', () => {

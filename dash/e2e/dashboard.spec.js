@@ -171,6 +171,27 @@ test('connection box shows disconnection with its age', async ({ page }) => {
   await expect(box.locator('.status-box-detail')).toContainText(/since \d+s ago/);
 });
 
+test('the dashboard reconnects after the websocket drops', async ({ page }) => {
+  // Every connection delivers a status message, then dies — the device's
+  // own post-config-save reboot behaves the same way from the dash's point
+  // of view. The box must show Disconnected, then recover on its own.
+  await page.routeWebSocket('**/ws', (ws) => {
+    setTimeout(() => ws.send(JSON.stringify(statusFixture)), 100);
+    setTimeout(() => ws.close(), 1000);
+  });
+
+  await page.goto('/');
+  const health = page.locator('.status-box');
+  const box = (label) => health.filter({ has: page.getByText(label, { exact: true }) });
+
+  await expect(box('Disconnected')).toHaveClass(/status-box-down/);
+  // The retry loop brings the link back without a page reload: green and
+  // counting again once a reconnection's status message lands.
+  const connected = box('Connected');
+  await expect(connected).toHaveClass(/status-box-ok/);
+  await expect(connected.locator('.status-box-detail')).toContainText(/updated \d+s ago/);
+});
+
 test('config save flow posts the edited config to the API', async ({ page }) => {
   await page.goto('/');
 
