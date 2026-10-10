@@ -1,10 +1,32 @@
 # DRIFT board identity in the ESP32-C3 eFuse BLOCK3 user data (BLOCK_USR_DATA).
 # Layout mirrors src/board.h: byte 0 = board type (0 = UNDEFINED, 1 = BASIC,
-# 2 = ADVANCED), byte 1 = revision major, byte 2 = revision minor. Bit offsets
-# are LSB-first within the block, the order esp_efuse_read_block() reads and
-# src/board.cpp decodes (verified by the tools/burn_board_id.py --efuse-file
-# round trip against espefuse --virt).
-# name,           block, bit_offset, bit_size
-DRIFT_BOARD_TYPE, BLK3,  0,  8
-DRIFT_REV_MAJOR,  BLK3,  8,  8
-DRIFT_REV_MINOR,  BLK3,  16, 8
+# 2 = ADVANCED), byte 1 = revision major, byte 2 = revision minor, bytes 3..22
+# = the optional manufacturer serial (NUL-padded ASCII, up to ODID_ID_SIZE = 20
+# characters; all-zero = no serial). Bit offsets are LSB-first within the
+# block, the order esp_efuse_read_block() reads and src/board.cpp decodes
+# (verified by the tools/burn_board_id.py --efuse-file round trip against
+# espefuse --virt).
+# name,             block, bit_offset, bit_size
+DRIFT_BOARD_TYPE,   BLK3,  0,   8
+DRIFT_REV_MAJOR,    BLK3,  8,   8
+DRIFT_REV_MINOR,    BLK3,  16,  8
+DRIFT_SERIAL_00,    BLK3,  24,  8
+DRIFT_SERIAL_01,    BLK3,  32,  8
+DRIFT_SERIAL_02,    BLK3,  40,  8
+DRIFT_SERIAL_03,    BLK3,  48,  8
+DRIFT_SERIAL_04,    BLK3,  56,  8
+DRIFT_SERIAL_05,    BLK3,  64,  8
+DRIFT_SERIAL_06,    BLK3,  72,  8
+DRIFT_SERIAL_07,    BLK3,  80,  8
+DRIFT_SERIAL_08,    BLK3,  88,  8
+DRIFT_SERIAL_09,    BLK3,  96,  8
+DRIFT_SERIAL_10,    BLK3,  104, 8
+DRIFT_SERIAL_11,    BLK3,  112, 8
+DRIFT_SERIAL_12,    BLK3,  120, 8
+DRIFT_SERIAL_13,    BLK3,  128, 8
+DRIFT_SERIAL_14,    BLK3,  136, 8
+DRIFT_SERIAL_15,    BLK3,  144, 8
+DRIFT_SERIAL_16,    BLK3,  152, 8
+DRIFT_SERIAL_17,    BLK3,  160, 8
+DRIFT_SERIAL_18,    BLK3,  168, 8
+DRIFT_SERIAL_19,    BLK3,  176, 8

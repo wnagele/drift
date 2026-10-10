@@ -40,13 +40,17 @@ Task taskSendStatus(1*TASK_SECOND, TASK_FOREVER, &sendStatus, &scheduler, true);
 void setup() {
     Serial.begin(9600);
 
-    // One eFuse read at boot: type + revision, UNDEFINED when the block was
-    // never burned (the devkit/QEMU case).
+    // One eFuse read at boot: type + revision (+ the optional manufacturer
+    // serial), UNDEFINED when the block was never burned (the devkit/QEMU
+    // case).
     board_init();
     BoardId board = board_id();
     Serial.printf("board %s rev %u.%u\n",
                   board_type_name(board.type), board.rev_major, board.rev_minor);
+    if (board_serial_present())
+        Serial.printf("serial %s\n", board_serial());
 
+    // Must follow board_init(): a burned serial is the ua_id default.
     config_init(config_storage_esp(), getDefaultSSID());
 
     net_init();

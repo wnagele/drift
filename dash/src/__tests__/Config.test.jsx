@@ -344,6 +344,24 @@ describe('Config', () => {
     expect(await screen.findByText(/security check failed/i)).toBeInTheDocument();
   });
 
+  test('locks the UA ID when the device reports a manufacturer serial', async () => {
+    // The firmware seeds ua_id from the burned eFuse serial and refuses to
+    // save any other value, so the field renders read-only and the posted
+    // document carries the locked serial back unchanged.
+    server.use(http.get('/api/config', () =>
+      HttpResponse.json({ ...fixture, dri: { ...fixture.dri, ua_id_locked: true } })));
+    const { container } = render(<Config />);
+    const field = await screen.findByLabelText(/unmanned aircraft id/i);
+    expect(field).toBeDisabled();
+    expect(await screen.findByText('Set at manufacture — the serial cannot be changed.'))
+      .toBeInTheDocument();
+
+    fireEvent.submit(container.querySelector('form'));
+    await waitFor(() => expect(posted).not.toBeNull());
+    expect(posted.dri.ua_id).toEqual(fixture.dri.ua_id);
+    expect(posted.dri.ua_id_locked).toEqual(true);
+  });
+
   test('reports a failing config load', async () => {
     server.use(http.get('/api/config', () => new HttpResponse(null, { status: 500 })));
     render(<Config />);
