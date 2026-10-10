@@ -8,7 +8,7 @@ MAVLink v1 telemetry from a flight controller and broadcasts Drone Remote ID
 Wi-Fi Beacon vendor IE and Wi-Fi NAN. A React dashboard is served gzipped
 from the device's Wi-Fi SoftAP for config and status.
 
-- `src/` — firmware (~1k lines of hand-written C++ across 18 modules).
+- `src/` — firmware (~1k lines of hand-written C++ across 19 modules).
   Hardware/platform code is confined to `#ifdef` blocks at the bottom of a file
   or to a whole-file no-op twin, so every module also compiles on the host
   (`native` test env). Pure decisions are extracted into testable seams.
@@ -130,6 +130,11 @@ so the identity is a single, uncorrectable burn; type byte 0 = UNDEFINED, so
 a virgin block, a blank under
 QEMU and the native stub all land on the same "no identity" value — only the
 identity is stored in eFuse, never the pin map, which is resolved in firmware),
+`led` (the ADVANCED board's two status LEDs: green solid = good to fly, red
+solid = the link or a fix went stale after being up, red/green alternating at
+0.5 Hz = acquiring (no link yet, or a link without a fix); driven from
+status.cpp's flags on a millis() guard, pins resolved per board type — a no-op
+everywhere else, so no build flags or `#ifdef`s at the call sites),
 `utils` (default SSID + Wi-Fi NAN source MAC from eFuse MAC).
 
 Testability seams — keep these intact when refactoring:
@@ -154,6 +159,11 @@ Testability seams — keep these intact when refactoring:
   `ble_send_counters[]`, `ble_send_messages[]`, `ble_pack_send_count`,
   `ble_pack_send_counters[]`, `ble_pack_send_lens[]`,
   `ble_pack_send_bytes[][]`, `ble_send_reset()` clears both records).
+- `src/led.cpp` has a two-body split (`ESP32` vs native): `digitalWrite` on the
+  device, and a native recorder (`led_write_count`, `led_write_colors[]`,
+  `led_write_reset()`). No e2e stub is needed: the QEMU build reads a blank
+  eFuse as UNDEFINED, `led_pins_for` resolves no pins, and every `led_*` call
+  is a no-op without touching a GPIO.
 - `src/wifi_beacon.cpp` has the same three-body split (gated on
   `DRIFT_NO_NET` instead of `DRIFT_NO_BLE`): `esp_wifi_set_vendor_ie` on the
   device, an empty e2e stub, and a native recorder (`wifi_beacon_send_count`,
@@ -233,7 +243,8 @@ Marked `linguist-generated` in `.gitattributes`; regenerate and commit the outpu
 Unity with a hand-written `main()` per file; ArduinoFake where Arduino APIs are
 touched. Each `test/test_*/` dir is a separate target: `board`, `broadcast`, `config`,
 `debug`, `dri` (largest — byte-exact ODID encodings, schedule, timing guard,
-`millis()` wraparound), `http_api`, `mavlink`, `status`, `txcount`, `utils`,
+`millis()` wraparound), `http_api`, `led` (indicator resolve table, pins per board
+type, toggle guard cadence), `mavlink`, `status`, `txcount`, `utils`,
 `wifi_ap`.
 `test/support/fixtures.h` provides `fixture_read()`, which tries several
 candidate paths so the tests tolerate the runner's working directory.
