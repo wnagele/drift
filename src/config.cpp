@@ -1,6 +1,7 @@
 #include <ArduinoJson.h>
 #include <string.h>
 
+#include "board.h"
 #include "config.h"
 
 #define KEY_WIFI_SSID "wifi_ssid"
@@ -46,7 +47,21 @@ void config_init(const ConfigStorage *storage_backend, const String &default_ssi
         storage->putString(KEY_WIFI_SSID, default_ssid);
     if (!storage->isKey(KEY_WIFI_PASSWORD))
         storage->putString(KEY_WIFI_PASSWORD, "");
-    if (!storage->isKey(KEY_DRI_UA_ID))
+    // A burned manufacturer serial *is* the module's registered identity, so
+    // it is written into ua_id at every boot - not merely seeded as the
+    // default. Seeding only would let a ua_id saved before the burn (or a
+    // bench override build over an older config) linger as the value the
+    // dash shows and the encoder broadcasts, while config_save()'s lock
+    // rejects every attempt to align it - a bricked identity. eFuse is the
+    // source of truth here; NVS is a cache.
+    if (board_serial_present())
+        storage->putString(KEY_DRI_UA_ID, board_serial());
+    else if (!storage->isKey(KEY_DRI_UA_ID))
+        // Still seed the default on unserialized boards: a missing key is
+        // not the same state as an empty one, even though every reader
+        // treats them the same (Preferences logs an [E] NOT_FOUND per read
+        // of a missing key, which the e2e suite pins as a boot defect - the
+        // native mem backend cannot tell them apart).
         storage->putString(KEY_DRI_UA_ID, "");
     if (!storage->isKey(KEY_DRI_UA_DESC))
         storage->putString(KEY_DRI_UA_DESC, "");
@@ -89,6 +104,10 @@ String config_get() {
     doc["dri"]["bt5_enabled"] = config_bt5_enabled();
     doc["dri"]["wifi_beacon_enabled"] = config_wifi_beacon_enabled();
     doc["dri"]["wifi_nan_enabled"] = config_wifi_nan_enabled();
+    // GET-only derived state (ignored on POST): tells the dash the serial is
+    // factory-set, so it renders the ua_id field read-only instead of
+    // presenting a lock the firmware would reject.
+    doc["dri"]["ua_id_locked"] = board_serial_present();
     String buf;
     serializeJson(doc, buf);
     return buf;
@@ -157,6 +176,15 @@ bool config_save(String data) {
     }
     if (!region_known(dri_region)) {
         Serial.println("Config rejected: unknown region");
+        return false;
+    }
+    // The serial lock: a manufacturer serial burned into eFuse cannot be
+    // changed, so a posted ua_id that disagrees with it is a rejection -
+    // same complete-document contract as the region rule (the whole POST is
+    // refused, nothing is written, no reboot). The dash never gets this far
+    // (the field is read-only there); this is the backstop behind it.
+    if (board_serial_present() && strcmp(dri_ua_id, board_serial()) != 0) {
+        Serial.println("Config rejected: ua_id is locked to the manufacturer serial");
         return false;
     }
 
