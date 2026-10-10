@@ -6,6 +6,7 @@
 #include "broadcast.h"
 #include "config.h"
 #include "dri.h"
+#include "led.h"
 #include "net.h"
 #include "status.h"
 #include "txcount.h"
@@ -64,6 +65,10 @@ void setup() {
     // radio seams, so a disabled transport cannot report phantom activity.
     txcount_init(config_bt5_enabled(), config_wifi_beacon_enabled(),
                  config_wifi_nan_enabled());
+
+    // The status LEDs exist on the ADVANCED board only (led_pins_for
+    // resolves it); everywhere else every led_* call is a no-op.
+    led_init(board_type());
 
     mavlink_init(&mavlink_state);
 
@@ -201,6 +206,7 @@ void loop() {
 
     dri_transmit(&odid_state, millis());
     txcount_sample(millis());
+    led_update(millis());
 
     scheduler.execute();
 }
