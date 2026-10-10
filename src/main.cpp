@@ -2,6 +2,7 @@
 #include <TaskScheduler.h>
 #include "betaflight_mavlink.h"
 #include "ble.h"
+#include "board.h"
 #include "broadcast.h"
 #include "config.h"
 #include "dri.h"
@@ -37,6 +38,13 @@ Task taskSendStatus(1*TASK_SECOND, TASK_FOREVER, &sendStatus, &scheduler, true);
 
 void setup() {
     Serial.begin(9600);
+
+    // One eFuse read at boot: type + revision, UNDEFINED when the block was
+    // never burned (the devkit/QEMU case).
+    board_init();
+    BoardId board = board_id();
+    Serial.printf("board %s rev %u.%u\n",
+                  board_type_name(board.type), board.rev_major, board.rev_minor);
 
     config_init(config_storage_esp(), getDefaultSSID());
 
