@@ -1,0 +1,10 @@
+# DRIFT board identity in the ESP32-C3 eFuse BLOCK3 user data (BLOCK_USR_DATA).
+# Layout mirrors src/board.h: byte 0 = board type (0 = UNDEFINED, 1 = BASIC,
+# 2 = ADVANCED), byte 1 = revision major, byte 2 = revision minor. Bit offsets
+# are LSB-first within the block, the order esp_efuse_read_block() reads and
+# src/board.cpp decodes (verified by the tools/burn_board_id.py --efuse-file
+# round trip against espefuse --virt).
+# name,           block, bit_offset, bit_size
+DRIFT_BOARD_TYPE, BLK3,  0,  8
+DRIFT_REV_MAJOR,  BLK3,  8,  8
+DRIFT_REV_MINOR,  BLK3,  16, 8

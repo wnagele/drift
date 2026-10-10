@@ -8,7 +8,7 @@ MAVLink v1 telemetry from a flight controller and broadcasts Drone Remote ID
 Wi-Fi Beacon vendor IE and Wi-Fi NAN. A React dashboard is served gzipped
 from the device's Wi-Fi SoftAP for config and status.
 
-- `src/` — firmware (~1k lines of hand-written C++ across 17 modules).
+- `src/` — firmware (~1k lines of hand-written C++ across 18 modules).
   Hardware/platform code is confined to `#ifdef` blocks at the bottom of a file
   or to a whole-file no-op twin, so every module also compiles on the host
   (`native` test env). Pure decisions are extracted into testable seams.
@@ -124,6 +124,12 @@ frame seam), `config`/`config_storage`/
 `net` (Wi-Fi, async HTTP, WebSocket, OTA), `wifi_ap` (open-vs-WPA decision),
 `status`, `txcount` (per-transport transmit-rate counters for the dash),
 `broadcast` (the ODID state as dash-ready JSON), `debug` (build provenance),
+`board` (board type + revision from the eFuse BLOCK3 user data, burned once on
+the manufacturing jig via `tools/burn_board_id.py` — BLOCK3 is RS(4:2)-coded,
+so the identity is a single, uncorrectable burn; type byte 0 = UNDEFINED, so
+a virgin block, a blank under
+QEMU and the native stub all land on the same "no identity" value — only the
+identity is stored in eFuse, never the pin map, which is resolved in firmware),
 `utils` (default SSID + Wi-Fi NAN source MAC from eFuse MAC).
 
 Testability seams — keep these intact when refactoring:
@@ -225,7 +231,7 @@ Marked `linguist-generated` in `.gitattributes`; regenerate and commit the outpu
 ### Host unit tests (`pio test -e native`)
 
 Unity with a hand-written `main()` per file; ArduinoFake where Arduino APIs are
-touched. Each `test/test_*/` dir is a separate target: `broadcast`, `config`,
+touched. Each `test/test_*/` dir is a separate target: `board`, `broadcast`, `config`,
 `debug`, `dri` (largest — byte-exact ODID encodings, schedule, timing guard,
 `millis()` wraparound), `http_api`, `mavlink`, `status`, `txcount`, `utils`,
 `wifi_ap`.
