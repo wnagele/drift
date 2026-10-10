@@ -129,7 +129,12 @@ the manufacturing jig via `tools/burn_board_id.py` — BLOCK3 is RS(4:2)-coded,
 so the identity is a single, uncorrectable burn; type byte 0 = UNDEFINED, so
 a virgin block, a blank under
 QEMU and the native stub all land on the same "no identity" value — only the
-identity is stored in eFuse, never the pin map, which is resolved in firmware),
+identity is stored in eFuse, never the pin map, which is resolved in firmware;
+BLOCK3 bytes 3..22 carry the optional manufacturer serial (NUL-padded ASCII,
+all-zero = none, burned in the same single invocation — no second burn): a
+burned serial is the `ua_id` default *and* its one immutable value — the dash
+shows it read-only via GET `dri.ua_id_locked` and `config_save()` rejects any
+POST that disagrees),
 `led` (the ADVANCED board's two status LEDs: green solid = good to fly, red
 solid = the link or a fix went stale after being up, red/green alternating at
 0.5 Hz = acquiring (no link yet, or a link without a fix); driven from
@@ -298,8 +303,8 @@ ODID (no maintained implementation exists).
 | Route | Response |
 | --- | --- |
 | `GET /` | gzipped `DASH` blob, `text/html; charset=utf-8` |
-| `GET /api/config` | `{wifi:{ssid,password},dri:{region,ua_id,ua_desc,op_id,op_secret,bt5_enabled,wifi_beacon_enabled,wifi_nan_enabled}}` |
-| `POST /api/config` | 200 + reboot (identity is read once at boot); 400 on a bodiless POST, malformed JSON, a missing or wrong-typed field, or an unknown region |
+| `GET /api/config` | `{wifi:{ssid,password},dri:{region,ua_id,ua_id_locked,ua_desc,op_id,op_secret,bt5_enabled,wifi_beacon_enabled,wifi_nan_enabled}}` — `ua_id_locked` is GET-only (ignored on POST): true when a manufacturer serial is burned into eFuse |
+| `POST /api/config` | 200 + reboot (identity is read once at boot); 400 on a bodiless POST, malformed JSON, a missing or wrong-typed field, an unknown region, or a `ua_id` that disagrees with a burned manufacturer serial |
 | `GET /debug/info` | `{version,git_ref,build_time}` (nulls in dev builds) |
 | `WS /ws` | Two messages once per second, from the one 1 s task. `{type:"status",telemetry,gnss,tx:{bt4,bt5,wifi_beacon,wifi_nan}}` — each `tx` transport is `{frames,messages}` per second over the last completed window — then `{type:"broadcast",...}`, the flat broadcast inspector payload (`broadcast.cpp`; enums as display strings, measurements as numbers or `null`, an invalid message's keys omitted). Pinned by `test/fixtures/api/broadcast.json`. |
 
@@ -316,7 +321,9 @@ rebooted, which a client cannot tell from success.
 
 NVS keys (namespace `drift`): `wifi_ssid` (defaults to `DRIFT_xxxx` from the
 eFuse MAC, also used as the BLE device name), `wifi_password` (empty ⇒ open AP),
-`dri_region`, `dri_ua_id` (≤20), `dri_ua_desc` (≤23), `dri_op_id` (≤20),
+`dri_region`, `dri_ua_id` (≤20; defaults to the burned manufacturer serial when
+one exists, and cannot be saved to anything else then), `dri_ua_desc` (≤23),
+`dri_op_id` (≤20),
 `dri_op_secret` (the EU/UK verification code; never broadcast),
 `bt5_enabled` (`"1"`/`"0"`, default on), `wifi_beacon` (same encoding, default
 on; the API field is `wifi_beacon_enabled`), `wifi_nan` (same encoding, default

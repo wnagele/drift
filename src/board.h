@@ -30,6 +30,18 @@
 #define BOARD_EFUSE_BYTES (BOARD_TYPE_BYTES + BOARD_REV_MAJOR_BYTES + BOARD_REV_MINOR_BYTES)
 #define BOARD_EFUSE_BITS (BOARD_EFUSE_BYTES * 8)
 
+// The optional manufacturer serial, following the identity in BLOCK3:
+// NUL-padded plain ASCII, up to ODID_ID_SIZE (20) characters. An all-zero
+// region reads back as "no serial" - the same absent-means-undefined
+// convention as the type byte - so a blank under QEMU and the native stub
+// stay on the unlocked path. A burned serial *is* the module's registered
+// identity (config's ua_id): it seeds the default, the dash shows it
+// read-only, and config_save() rejects any attempt to change it.
+#define BOARD_SERIAL_OFFSET BOARD_EFUSE_BYTES   // bytes: type, rev major, rev minor
+#define BOARD_SERIAL_BYTES 20                  // ODID_ID_SIZE
+#define BOARD_SERIAL_EFUSE_BYTES (BOARD_SERIAL_OFFSET + BOARD_SERIAL_BYTES)
+#define BOARD_SERIAL_EFUSE_BITS (BOARD_SERIAL_EFUSE_BYTES * 8)
+
 typedef enum {
     BOARD_TYPE_UNDEFINED = 0,  // unburned block, unknown type, or no eFuse
     BOARD_TYPE_BASIC = 1,     // bare minimum, like the devkit build
@@ -46,9 +58,25 @@ typedef struct {
 BoardId board_decode(const uint8_t raw[BOARD_EFUSE_BYTES]);
 const char *board_type_name(board_type_t type);
 
+// Decode the serial region (bytes 3..22, NUL-padded) into a NUL-terminated
+// string. Returns false when no serial is burned (the all-zero region); out
+// is "" then.
+bool board_decode_serial(const uint8_t raw[BOARD_SERIAL_EFUSE_BYTES],
+                         char out[BOARD_SERIAL_BYTES + 1]);
+
 // Read the identity once at boot and cache it.
 void board_init(void);
 BoardId board_id(void);
 board_type_t board_type(void);
+
+// The burned serial ("" when none), and whether one is burned at all.
+const char *board_serial(void);
+bool board_serial_present(void);
+
+#if !defined(ESP32)
+// Native tests: the eFuse stub burns nothing, so tests inject a serial to
+// exercise the config lock. Absent on the device.
+void board_set_serial_for_test(const char *serial);
+#endif
 
 #endif

@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "config.h"
+#include "board.h"
 #include "../support/fixtures.h"
 
 using namespace fakeit;
@@ -33,6 +34,9 @@ void setUp() {
     ArduinoFakeReset();
     // config_save() logs to Serial on every rejection.
     When(OverloadedMethod(ArduinoFake(Serial), println, size_t(const char *))).AlwaysReturn(1);
+    // No burned manufacturer serial unless a test injects one (the lock
+    // tests); native has no eFuse.
+    board_set_serial_for_test("");
 }
 
 // --- Shared-fixture helpers ---------------------------------------------------
@@ -343,6 +347,56 @@ void test_empty_strings_are_accepted() {
     }
 }
 
+// --- The manufacturer serial lock ------------------------------------------------
+//
+// A burned serial is the module's registered identity: the ua_id default and
+// its one immutable value. Native has no eFuse, so the lock tests inject the
+// serial through the board test seam.
+
+void test_serial_seeds_ua_id_default() {
+    board_set_serial_for_test("1DRIFT000TEST00001");
+    config_init(&mem_storage, "DRIFT_ABCD");
+    TEST_ASSERT_EQUAL_STRING("1DRIFT000TEST00001", config_dri_ua_id().c_str());
+    // And the GET document reports the lock.
+    JsonDocument got;
+    TEST_ASSERT_FALSE(deserializeJson(got, config_get()));
+    TEST_ASSERT_TRUE(got["dri"]["ua_id_locked"].as<bool>());
+}
+
+void test_unlocked_get_reports_no_lock() {
+    config_init(&mem_storage, "DRIFT_ABCD");
+    JsonDocument got;
+    TEST_ASSERT_FALSE(deserializeJson(got, config_get()));
+    TEST_ASSERT_FALSE(got["dri"]["ua_id_locked"].as<bool>());
+}
+
+void test_locked_serial_accepts_itself_and_rejects_anything_else() {
+    // The fixture's ua_id is the burned serial, so the baseline save (which
+    // posts exactly the fixture) must succeed.
+    board_set_serial_for_test("1DRIFT000TEST00001");
+    config_init(&mem_storage, "DRIFT_ABCD");
+    save_fixture_baseline();
+    assert_all_fields_match_fixture("locked baseline");
+
+    // Anything else is refused - empty included, which is legal ua_id when
+    // unlocked - and writes nothing at all.
+    const char *const changed[] = {"", "1DRIFT000TEST00002", "other-serial"};
+    for (const char *ua_id : changed) {
+        JsonDocument doc;
+        load_fixture(doc);
+        doc["dri"]["ua_id"] = ua_id;
+        std::string label = std::string("locked ua_id '") + ua_id + "'";
+        TEST_ASSERT_FALSE_MESSAGE(save(doc), label.c_str());
+        assert_all_fields_match_fixture(label);
+    }
+
+    // The same document with the serial itself in place still round-trips.
+    JsonDocument doc;
+    load_fixture(doc);
+    TEST_ASSERT_TRUE(save(doc));
+    TEST_ASSERT_EQUAL_STRING("1DRIFT000TEST00001", config_dri_ua_id().c_str());
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_init_creates_defaults);
@@ -357,5 +411,8 @@ int main(int, char **) {
     RUN_TEST(test_missing_section_is_rejected);
     RUN_TEST(test_missing_null_or_wrong_typed_field_is_rejected_per_field);
     RUN_TEST(test_empty_strings_are_accepted);
+    RUN_TEST(test_serial_seeds_ua_id_default);
+    RUN_TEST(test_unlocked_get_reports_no_lock);
+    RUN_TEST(test_locked_serial_accepts_itself_and_rejects_anything_else);
     return UNITY_END();
 }

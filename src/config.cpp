@@ -1,6 +1,7 @@
 #include <ArduinoJson.h>
 #include <string.h>
 
+#include "board.h"
 #include "config.h"
 
 #define KEY_WIFI_SSID "wifi_ssid"
@@ -46,8 +47,12 @@ void config_init(const ConfigStorage *storage_backend, const String &default_ssi
         storage->putString(KEY_WIFI_SSID, default_ssid);
     if (!storage->isKey(KEY_WIFI_PASSWORD))
         storage->putString(KEY_WIFI_PASSWORD, "");
+    // A burned manufacturer serial *is* the module's registered identity:
+    // it is the ua_id default (so a serialized board broadcasts its serial
+    // out of the box) and the one value the user cannot change - see the
+    // lock in config_save().
     if (!storage->isKey(KEY_DRI_UA_ID))
-        storage->putString(KEY_DRI_UA_ID, "");
+        storage->putString(KEY_DRI_UA_ID, board_serial());
     if (!storage->isKey(KEY_DRI_UA_DESC))
         storage->putString(KEY_DRI_UA_DESC, "");
     if (!storage->isKey(KEY_DRI_OP_ID))
@@ -89,6 +94,10 @@ String config_get() {
     doc["dri"]["bt5_enabled"] = config_bt5_enabled();
     doc["dri"]["wifi_beacon_enabled"] = config_wifi_beacon_enabled();
     doc["dri"]["wifi_nan_enabled"] = config_wifi_nan_enabled();
+    // GET-only derived state (ignored on POST): tells the dash the serial is
+    // factory-set, so it renders the ua_id field read-only instead of
+    // presenting a lock the firmware would reject.
+    doc["dri"]["ua_id_locked"] = board_serial_present();
     String buf;
     serializeJson(doc, buf);
     return buf;
@@ -157,6 +166,15 @@ bool config_save(String data) {
     }
     if (!region_known(dri_region)) {
         Serial.println("Config rejected: unknown region");
+        return false;
+    }
+    // The serial lock: a manufacturer serial burned into eFuse cannot be
+    // changed, so a posted ua_id that disagrees with it is a rejection -
+    // same complete-document contract as the region rule (the whole POST is
+    // refused, nothing is written, no reboot). The dash never gets this far
+    // (the field is read-only there); this is the backstop behind it.
+    if (board_serial_present() && strcmp(dri_ua_id, board_serial()) != 0) {
+        Serial.println("Config rejected: ua_id is locked to the manufacturer serial");
         return false;
     }
 

@@ -1,6 +1,7 @@
 #include <unity.h>
 
 #include <stddef.h>
+#include <string.h>
 
 #include "board.h"
 
@@ -59,6 +60,42 @@ void test_native_id_is_undefined() {
     TEST_ASSERT_EQUAL(BOARD_TYPE_UNDEFINED, board_type());
 }
 
+void test_serial_decode() {
+    // Unburned region (all zero): no serial, out "".
+    uint8_t raw[BOARD_SERIAL_EFUSE_BYTES] = { 0 };
+    char out[BOARD_SERIAL_BYTES + 1];
+    TEST_ASSERT_FALSE(board_decode_serial(raw, out));
+    TEST_ASSERT_EQUAL_STRING("", out);
+
+    // Burned: bytes 3..22, NUL-padded, NUL-terminated in out.
+    memset(raw, 0, sizeof(raw));
+    memcpy(raw + BOARD_SERIAL_OFFSET, "ABC-123", 7);
+    TEST_ASSERT_TRUE(board_decode_serial(raw, out));
+    TEST_ASSERT_EQUAL_STRING("ABC-123", out);
+
+    // A full-width 20-char serial fits without the NUL padding.
+    memset(raw, 0, sizeof(raw));
+    memcpy(raw + BOARD_SERIAL_OFFSET, "01234567890123456789", 20);
+    TEST_ASSERT_TRUE(board_decode_serial(raw, out));
+    TEST_ASSERT_EQUAL_STRING("01234567890123456789", out);
+}
+
+void test_native_serial_is_absent() {
+    // Native stub: no eFuse, so no serial, and the accessor pair agrees.
+    TEST_ASSERT_EQUAL_STRING("", board_serial());
+    TEST_ASSERT_FALSE(board_serial_present());
+    // The test injection seam the config lock tests use.
+    board_set_serial_for_test("SERIAL-001");
+    TEST_ASSERT_EQUAL_STRING("SERIAL-001", board_serial());
+    TEST_ASSERT_TRUE(board_serial_present());
+    board_set_serial_for_test("");
+    TEST_ASSERT_FALSE(board_serial_present());
+    // board_init() clears whatever a previous test injected.
+    board_set_serial_for_test("SERIAL-001");
+    board_init();
+    TEST_ASSERT_EQUAL_STRING("", board_serial());
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_blank_efuse_is_undefined);
@@ -67,5 +104,7 @@ int main(int, char **) {
     RUN_TEST(test_unknown_type_is_undefined);
     RUN_TEST(test_names);
     RUN_TEST(test_native_id_is_undefined);
+    RUN_TEST(test_serial_decode);
+    RUN_TEST(test_native_serial_is_absent);
     return UNITY_END();
 }
