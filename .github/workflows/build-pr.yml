@@ -26,8 +26,29 @@ jobs:
           make fixtures
           git diff --exit-code -- test/fixtures
 
+  # Same freshness guarantee for the embedded dash: src/dash.{h,cpp} are
+  # generated files (webpack + wrap.js), and a PR that changes dash/ sources
+  # without regenerating them would ship a stale UI from main while all
+  # tests pass. wrap.js is deterministic (gzipSync, no timestamps), so a
+  # fresh build over the same lockfile (npm ci) must reproduce the committed
+  # blob byte-for-byte.
+  dash-bundle-fresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Install Dependencies
+        run: npm ci
+        working-directory: dash
+      - name: Dash bundle matches its sources
+        run: make dash-check
+
   firmware-test:
-    needs: fixtures-fresh
+    needs: [fixtures-fresh, dash-bundle-fresh]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -61,7 +82,7 @@ jobs:
         run: docker run --rm -v "$PWD:/work:ro" drift-e2e
 
   dash-test:
-    needs: fixtures-fresh
+    needs: [fixtures-fresh, dash-bundle-fresh]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -98,7 +119,7 @@ jobs:
         working-directory: dash
 
   build:
-    needs: [dash-e2e, firmware-e2e]
+    needs: [fixtures-fresh, dash-bundle-fresh, dash-e2e, firmware-e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

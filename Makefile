@@ -52,6 +52,32 @@ $(ODID_FIXTURES): $(BUILD_DIR)/gen_odid_fixtures
 e2e-firmware:
 	$(PIO) run -e esp32_c3_e2e
 
+# Regenerate the embedded dash (src/dash.{h,cpp}) from the dash/ sources:
+# webpack then wrap.js, then the copy into src/ - which the former
+# dash/build.sh never did. npm ci runs first when node_modules is missing,
+# so the target works from a fresh checkout.
+#
+# dash-check: freshness without a byte-exact diff. wrap.js embeds a sha256
+# of the bundle's *inputs* (dash/src, index.html, package-lock.json) into
+# the generated files; the check recomputes it and compares. A byte-exact
+# diff would false-positive across environments: webpack's minimized output
+# is not byte-stable across node versions, so the committed blob only
+# reproduces under the node major that last regenerated it - the inputs
+# hash is the invariant that actually matters.
+DASH_NODE_MODULES := dash/node_modules
+
+$(DASH_NODE_MODULES):
+	cd dash && npm ci
+
+.PHONY: dash dash-check
+dash: | $(DASH_NODE_MODULES)
+	cd dash && npm run webpack
+	cd dash && node wrap.js
+	cp dash/dash.h dash/dash.cpp src/
+
+dash-check: | $(DASH_NODE_MODULES)
+	cd dash && node wrap.js --check
+
 e2e-image:
 	docker build -f test/e2e/docker/Dockerfile -t $(E2E_IMAGE) test/e2e/docker
 

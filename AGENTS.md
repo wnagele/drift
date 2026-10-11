@@ -192,9 +192,9 @@ while advertising).
 - Firmware e2e (QEMU in Docker): `make e2e`
   (or the pieces: `make e2e-firmware`, `make e2e-image`)
 - Regenerate fixtures: `make fixtures` (run from the repo root)
+- Regenerate the embedded dash: `make dash` (webpack + wrap + copy into `src/`)
 - Dash unit tests: `cd dash && npm ci && npm test`
 - Dash E2E: `cd dash && npm run test:e2e` (needs `npx playwright install chromium`)
-- Dash bundle: `cd dash && ./build.sh` (npm install + webpack + wrap)
 - Dash local preview: `cd dash && npm run dev` — mock device on
   `http://127.0.0.1:8321` (shared fixtures for the API, 1 Hz `/ws` stream of
   both messages, status then broadcast, like the firmware's one task).
@@ -208,10 +208,22 @@ while advertising).
 Marked `linguist-generated` in `.gitattributes`; regenerate and commit the output.
 
 - `src/dash.{h,cpp}` — the gzipped `index.html` + `bundle.js` as a `PROGMEM`
-  byte array. `dash/build.sh` does *not* copy them; the full step is
-  `cd dash && npm run webpack && node wrap.js && cp dash.{h,cpp} ../src/`.
+  byte array. The full step is
+  `make dash` (= `cd dash && npm run webpack && node wrap.js &&
+  cp dash/dash.h dash/dash.cpp src/`, `npm ci` first when `node_modules`
+  is missing — which is also the whole of the former `dash/build.sh`
+  build, plus the copy the script never did; the script is gone).
   `wrap.js` must run with cwd `dash/`. Note the `%%%SCRIPT%%%` substitution uses
   a function replacer on purpose — a minified bundle contains `$&`/`$1`.
+  CI asserts freshness (`dash-bundle-fresh` job, gating the test and build
+  jobs like `fixtures-fresh` does): `make dash-check` recomputes the
+  sha256 of the bundle's *inputs* (dash/src, index.html, package-lock.json —
+  `__tests__` excluded) that `wrap.js` embeds into the generated files, and
+  compares it against the committed one. Not a byte-exact diff of the blob:
+  webpack's minimized output is not byte-stable across node majors (the
+  blob only reproduces under the node that last regenerated it), while the
+  inputs hash is the actual invariant — sources or lockfile changed without
+  `make dash` is the failure it catches.
 - `test/fixtures/mavlink/*.bin` (9) and `test/fixtures/odid/*.bin` (6) — from
   `test/tools/gen_*.cpp` via `make fixtures`. The generators write hardcoded
   relative paths, so they only work from the repo root. MAVLink headers come
