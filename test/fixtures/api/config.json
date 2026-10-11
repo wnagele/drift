@@ -6,6 +6,7 @@
   "dri": {
     "region": "EU",
     "ua_id": "1DRIFT000TEST00001",
+    "ua_id_locked": false,
     "ua_desc": "DRIFT test fixture",
     "op_id": "AUTdrift0test01h",
     "op_secret": "abc",

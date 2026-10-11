@@ -3,6 +3,10 @@
 #include "config_storage.h"
 
 void config_init(const ConfigStorage *storage, const String &default_ssid);
+// GET /api/config shape: the stored fields plus the GET-only
+// dri.ua_id_locked (ignored on POST), true when a manufacturer serial is
+// burned into eFuse - then ua_id is forced to it at boot and is its one
+// immutable value.
 String config_get();
 
 // POST /api/config takes a *complete* configuration document: every field

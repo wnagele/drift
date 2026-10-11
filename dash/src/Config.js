@@ -118,6 +118,11 @@ function operatorFor(region, value) {
 const Config = () => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  // The manufacturer serial lock (GET dri.ua_id_locked): a serialized module
+  // shows its serial read-only, because the firmware refuses to save any
+  // other ua_id. Kept out of the form - it is derived state, echoed back on
+  // POST so the shared fixture document round-trips unchanged.
+  const [uaLocked, setUaLocked] = useState(false);
   // The operator field's label, visibility and validation all key off the
   // selected region, so the form has to re-render when it changes.
   const region = Form.useWatch('dri_region', form);
@@ -131,6 +136,7 @@ const Config = () => {
       try {
         setLoading(true);
         const { data } = await axios.get(API_ENDPOINT);
+        setUaLocked(data["dri"]["ua_id_locked"] ?? false);
         form.setFieldsValue({
           "wifi_ssid": data["wifi"]["ssid"],
           "wifi_password": data["wifi"]["password"],
@@ -179,7 +185,9 @@ const Config = () => {
           "op_secret": operator.secret,
           "bt5_enabled": data["dri_bt5_enabled"] ?? true,
           "wifi_beacon_enabled": data["dri_wifi_beacon_enabled"] ?? true,
-          "wifi_nan_enabled": data["dri_wifi_nan_enabled"] ?? false
+          "wifi_nan_enabled": data["dri_wifi_nan_enabled"] ?? false,
+          // Echo, not input: derived device state, ignored by the firmware.
+          "ua_id_locked": uaLocked
         }
       });
       message.success("Config saved.");
@@ -248,11 +256,15 @@ const Config = () => {
       <Form.Item
         label="Unmanned Aircraft ID"
         name="dri_ua_id"
+        // A serialized module shows its factory serial here, and the
+        // firmware refuses to save anything else, so the field is read-only
+        // rather than presenting an editable lock.
+        extra={uaLocked ? 'Set at manufacture — the serial cannot be changed.' : undefined}
         rules={[
           { required: true, message: "Unmanned Aircraft ID must be set." },
         ]}
       >
-        <Input maxLength="20" showCount="true" />
+        <Input maxLength="20" showCount="true" disabled={uaLocked} />
       </Form.Item>
       
       <Form.Item
